@@ -1,7 +1,6 @@
 streamlit
 requests
-json
-datetime
 pandas
-streamlit_lottie
-matplotlib.pyplot
+matplotlib
+numpy
+streamlit-lottie
