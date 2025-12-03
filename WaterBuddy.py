@@ -619,7 +619,7 @@ def dashboard_ui():
             percent = min((intake / user_goal) * 100 if user_goal > 0 else 0, 100)
 
             # Metric now styled by apply_theme() CSS
-            st.metric("Total intake (ml)", f"{intake} ml", delta=f"{remaining} ml to goal" if remaining > 0 else "Goal reached!")
+            st.metric("Total intake (ml)", f"{intake} ml", delta=f"{remaining} ml to achive the goal(remaining)" if remaining > 0 else "Goal reached!")
             st.progress(percent / 100)
 
             svg = generate_bottle_svg(percent)
