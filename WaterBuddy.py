@@ -491,13 +491,13 @@ def login_ui():
                     st.session_state.page = "dashboard"
                     st.success("Login successful.")
                     time.sleep(0.15)
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Invalid username or password.")
     st.markdown("---")
     if st.button("Create new account"):
         st.session_state.page = "signup"
-        st.experimental_rerun()
+        st.rerun()
 
 def signup_ui():
     st.header("Sign Up (username + password)")
@@ -515,14 +515,14 @@ def signup_ui():
                     st.success("Account created. Please log in.")
                     st.session_state.page = "login"
                     time.sleep(0.15)
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Username already taken or network error.")
 
     st.markdown("---")
     if st.button("Back to Login"):
         st.session_state.page = "login"
-        st.experimental_rerun()
+        st.rerun()
 
 # -----------------------
 # Dashboard UI (left buttons, right content)
@@ -533,7 +533,7 @@ def dashboard_ui():
         st.error("Missing user id. Please login again.")
         st.session_state.logged_in = False
         st.session_state.page = "login"
-        st.experimental_rerun()
+        st.rerun()
         return
 
     profile = get_user_profile(uid)
@@ -571,7 +571,7 @@ def dashboard_ui():
             st.session_state.uid = None
             st.session_state.page = "login"
             st.session_state.nav = "Home"
-            st.experimental_rerun()
+            st.rerun()
 
         st.markdown("---")
         st.write("Tip of the day")
@@ -649,7 +649,7 @@ def dashboard_ui():
                     ok = set_today_intake(uid, new_val)
                     if ok:
                         st.success(f"Added {DEFAULT_QUICK_LOG_ML} ml.")
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Failed to update. Check network/DB rules.")
 
@@ -663,7 +663,7 @@ def dashboard_ui():
                         ok = set_today_intake(uid, new_val)
                         if ok:
                             st.success(f"Added {int(custom)} ml.")
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error("Failed to update. Check network/DB rules.")
 
@@ -672,7 +672,7 @@ def dashboard_ui():
                     ok = reset_today_intake(uid)
                     if ok:
                         st.info("Reset successful.")
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error("Failed to reset. Check network/DB rules.")
 
@@ -714,7 +714,7 @@ def dashboard_ui():
             st.session_state.uid = None
             st.session_state.page = "login"
             st.session_state.nav = "Home"
-            st.experimental_rerun()
+            st.rerun()
 
 # -----------------------
 # App routing
