@@ -17,6 +17,7 @@ from datetime import date
 import random
 import time
 import os
+import matplotlib.pyplot as plt
 
 # Lottie support (optional)
 try:
@@ -107,6 +108,32 @@ def firebase_patch(path: str, value_dict: dict):
 # -----------------------
 # User helpers
 # -----------------------
+def get_user_days(uid):
+    """Return dict of all recorded days with intake values"""
+    data = firebase_get(f"{USERS_NODE}/{uid}/days")
+    if isinstance(data, dict):
+        result = {}
+        for day, rec in data.items():
+            intake = rec.get("intake") if isinstance(rec, dict) else None
+            if isinstance(intake, (int, float)):
+                result[day] = intake
+        return result
+    return {}
+
+def prepare_graph_data(uid):
+    days_data = get_user_days(uid)
+    daily = {DATE_STR: get_today_intake(uid)}
+    last_7 = {}
+    monthly = {}
+    for d, intake in days_data.items():
+        dt = datetime.fromisoformat(d)
+        daily[d] = intake
+        if dt >= datetime.today() - timedelta(days=7):
+            last_7[d] = intake
+        month = dt.strftime("%Y-%m")
+        monthly[month] = monthly.get(month,0) + intake
+    return daily, last_7, monthly
+
 def find_user_by_username(username: str):
     """Return (uid, user_obj) if found, else (None, None)."""
     data = firebase_get(USERS_NODE)
@@ -511,6 +538,32 @@ def dashboard_ui():
                         pass
             else:
                 st.write(f"Progress: {percent:.0f}%")
+st.markdown("---")
+st.subheader("Hydration Graph")
+graph_option = st.radio("Select graph:", ["Daily","Weekly","Monthly"])
+daily, last7, monthly = prepare_graph_data(uid)
+
+plt.figure(figsize=(8,4))
+if graph_option == "Daily":
+    x = list(daily.keys())
+    y = list(daily.values())
+    plt.bar(x, y, color="#67b3df")
+    plt.ylabel("ml intake")
+elif graph_option == "Weekly":
+    x = list(last7.keys())
+    y = list(last7.values())
+    plt.plot(x, y, marker='o', color="#3498db")
+    plt.xticks(rotation=45)
+    plt.ylabel("ml intake")
+else:  # Monthly
+    x = list(monthly.keys())
+    y = list(monthly.values())
+    plt.bar(x, y, color="#5dade2")
+    plt.xticks(rotation=45)
+    plt.ylabel("ml intake")
+plt.tight_layout()
+st.pyplot(plt)
+plt.close()
 
             # milestone messages
             if percent >= 100:
