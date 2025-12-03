@@ -237,204 +237,75 @@ def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
 # Theme CSS (readable nav & metric fix)
 # -----------------------
 def apply_theme(theme_name: str):
-
-    # NOTE: these CSS blocks include a stronger rule that targets nested spans
-    # inside the metric value to ensure Streamlit's internal nesting inherits
-    # the intended theme color.
-
-    # ---------------------- LIGHT MODE ----------------------
     if theme_name == "Light":
         st.markdown("""
         <style>
+        .stApp { background-color: #ffffff !important; color: #000000 !important; }
+        h1, h2, h3, h4, h5, h6, p, label, span { color: #000000 !important; }
 
-        .stApp {
-            background-color: #ffffff !important;
-            color: #000000 !important;
-        }
+        .stButton>button { background-color: #e6e6e6 !important; color: #000000 !important; border-radius: 8px !important; border: 1px solid #cccccc !important; }
+        .stButton>button:hover { background-color: #d9d9d9 !important; }
 
-        h1, h2, h3, h4, h5, h6, p, label, span {
-            color: #000000 !important;
-        }
-
-        .stButton>button {
-            background-color: #e6e6e6 !important;
-            color: #000000 !important;
-            border-radius: 8px !important;
-            border: 1px solid #cccccc !important;
-        }
-        .stButton>button:hover {
-            background-color: #d9d9d9 !important;
-        }
-
-        .stTextInput>div>div>input {
-            background-color: #fafafa !important;
-            color: #000000 !important;
-            border-radius: 6px !important;
-        }
-
-        .stSlider>div>div>div {
-            background-color: #007acc !important;
-        }
+        .stTextInput>div>div>input { background-color: #fafafa !important; color: #000000 !important; border-radius: 6px !important; }
 
         div[data-testid="metric-container"] {
-            background-color: #f7f7f7 !important;
-            border-radius: 12px !important;
-            padding: 12px !important;
-            border: 1px solid #e1e1e1 !important;
+            background-color: #f7f7f7 !important; border-radius: 12px !important; padding: 12px !important; border: 1px solid #e1e1e1 !important;
         }
-        div[data-testid="metric-container"] label {
-            color: #000000 !important;
-            font-weight: 600 !important;
-        }
-        div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+
+        /* Fully target nested spans inside metric */
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span,
+        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span span {
             color: #000000 !important;
             font-weight: 700 !important;
-            font-size: 1.5rem !important;
         }
-        div[data-testid="metric-container"] [data-testid="metric-delta"] {
-            color: #006600 !important;
-            font-weight: 600 !important;
-        }
-
-        /* Stronger fix for st.metric nested spans (covers span, span span, etc.) */
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span {
-            color: inherit !important;
-        }
-
         </style>
         """, unsafe_allow_html=True)
 
-
-
-    # ---------------------- AQUA MODE ----------------------
     elif theme_name == "Aqua":
         st.markdown("""
         <style>
+        .stApp { background-color: #e8fbff !important; color: #004455 !important; }
+        h1, h2, h3, h4, h5, h6, p, label, span { color: #004455 !important; }
 
-        .stApp {
-            background-color: #e8fbff !important;
-            color: #004455 !important;
-        }
+        .stButton>button { background-color: #c6f3ff !important; color: #004455 !important; border-radius: 8px !important; border: 1px solid #99e6ff !important; }
+        .stButton>button:hover { background-color: #b3edff !important; }
 
-        h1, h2, h3, h4, h5, h6, p, label, span {
-            color: #004455 !important;
-        }
+        .stTextInput>div>div>input { background-color: #ffffff !important; color: #003344 !important; border-radius: 6px !important; }
 
-        .stButton>button {
-            background-color: #c6f3ff !important;
-            color: #004455 !important;
-            border-radius: 8px !important;
-            border: 1px solid #99e6ff !important;
-        }
-        .stButton>button:hover {
-            background-color: #b3edff !important;
-        }
+        div[data-testid="metric-container"] { background-color: #d9f7ff !important; border-radius: 12px !important; padding: 12px !important; border: 1px solid #bdefff !important; }
 
-        .stTextInput>div>div>input {
-            background-color: #ffffff !important;
-            color: #003344 !important;
-            border-radius: 6px !important;
-        }
-
-        .stSlider>div>div>div {
-            background-color: #00aacc !important;
-        }
-
-        div[data-testid="metric-container"] {
-            background-color: #d9f7ff !important;
-            border-radius: 12px !important;
-            padding: 12px !important;
-            border: 1px solid #bdefff !important;
-        }
-        div[data-testid="metric-container"] label {
-            color: #005577 !important;
-            font-weight: 600 !important;
-        }
-        div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span,
+        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span span {
             color: #005577 !important;
             font-weight: 700 !important;
-            font-size: 1.5rem !important;
         }
-        div[data-testid="metric-container"] [data-testid="metric-delta"] {
-            color: #0077b6 !important;
-            font-weight: 600 !important;
-        }
-
-        /* Stronger fix for st.metric nested spans (covers span, span span, etc.) */
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span {
-            color: inherit !important;
-        }
-
         </style>
         """, unsafe_allow_html=True)
 
-
-
-    # ---------------------- DARK MODE ----------------------
-    else:
+    else:  # Dark
         st.markdown("""
         <style>
+        .stApp { background-color: #0f1720 !important; color: #e6eef6 !important; }
+        h1, h2, h3, h4, h5, h6, p, label, span { color: #e6eef6 !important; }
 
-        .stApp {
-            background-color: #0f1720 !important;
-            color: #e6eef6 !important;
-        }
+        .stButton>button { background-color: #1e2933 !important; color: #e6eef6 !important; border-radius: 8px !important; border: 1px solid #324151 !important; }
+        .stButton>button:hover { background-color: #253241 !important; }
 
-        h1, h2, h3, h4, h5, h6, p, label, span {
-            color: #e6eef6 !important;
-        }
+        .stTextInput>div>div>input { background-color: #1e2933 !important; color: #e6eef6 !important; border-radius: 6px !important; }
 
-        .stButton>button {
-            background-color: #1e2933 !important;
-            color: #e6eef6 !important;
-            border-radius: 8px !important;
-            border: 1px solid #324151 !important;
-        }
-        .stButton>button:hover {
-            background-color: #253241 !important;
-        }
+        div[data-testid="metric-container"] { background-color: #1a2634 !important; border-radius: 12px !important; padding: 12px !important; border: 1px solid #334155 !important; }
 
-        .stTextInput>div>div>input {
-            background-color: #1e2933 !important;
-            color: #e6eef6 !important;
-            border-radius: 6px !important;
-        }
-
-        .stSlider>div>div>div {
-            background-color: #3b82f6 !important;
-        }
-
-        div[data-testid="metric-container"] {
-            background-color: #1a2634 !important;
-            border-radius: 12px !important;
-            padding: 12px !important;
-            border: 1px solid #334155 !important;
-        }
-        div[data-testid="metric-container"] label {
-            color: #e6eef6 !important;
-            font-weight: 600 !important;
-        }
-        div[data-testid="metric-container"] [data-testid="stMetricValue"] {
-            color: #e6eef6 !important;
-            font-weight: 700 !important;
-            font-size: 1.5rem !important;
-        }
-        div[data-testid="metric-container"] [data-testid="metric-delta"] {
-            color: #4caf50 !important;
-            font-weight: 600 !important;
-        }
-
-        /* Stronger fix for st.metric nested spans (covers span, span span, etc.) */
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
         div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span {
-            color: inherit !important;
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span,
+        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span span {
+            color: #4caf50 !important;
+            font-weight: 700 !important;
         }
-
         </style>
         """, unsafe_allow_html=True)
 
