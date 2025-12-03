@@ -538,32 +538,32 @@ def dashboard_ui():
                         pass
             else:
                 st.write(f"Progress: {percent:.0f}%")
-st.markdown("---")
-st.subheader("Hydration Graph")
-graph_option = st.radio("Select graph:", ["Daily","Weekly","Monthly"])
-daily, last7, monthly = prepare_graph_data(uid)
-
-plt.figure(figsize=(8,4))
-if graph_option == "Daily":
-    x = list(daily.keys())
-    y = list(daily.values())
-    plt.bar(x, y, color="#67b3df")
-    plt.ylabel("ml intake")
-elif graph_option == "Weekly":
-    x = list(last7.keys())
-    y = list(last7.values())
-    plt.plot(x, y, marker='o', color="#3498db")
-    plt.xticks(rotation=45)
-    plt.ylabel("ml intake")
-else:  # Monthly
-    x = list(monthly.keys())
-    y = list(monthly.values())
-    plt.bar(x, y, color="#5dade2")
-    plt.xticks(rotation=45)
-    plt.ylabel("ml intake")
-plt.tight_layout()
-st.pyplot(plt)
-plt.close()
+                st.markdown("---")
+                st.subheader("Hydration Graph")
+                graph_option = st.radio("Select graph:", ["Daily","Weekly","Monthly"])
+                daily, last7, monthly = prepare_graph_data(uid)
+                
+                plt.figure(figsize=(8,4))
+                if graph_option == "Daily":
+                    x = list(daily.keys())
+                    y = list(daily.values())
+                    plt.bar(x, y, color="#67b3df")
+                    plt.ylabel("ml intake")
+                elif graph_option == "Weekly":
+                    x = list(last7.keys())
+                    y = list(last7.values())
+                    plt.plot(x, y, marker='o', color="#3498db")
+                    plt.xticks(rotation=45)
+                    plt.ylabel("ml intake")
+                else:
+                    x = list(monthly.keys())
+                    y = list(monthly.values())
+                    plt.bar(x, y, color="#5dade2")
+                    plt.xticks(rotation=45)
+                    plt.ylabel("ml intake")
+                    plt.tight_layout()
+                    st.pyplot(plt)
+                    plt.close()
 
             # milestone messages
             if percent >= 100:
