@@ -48,6 +48,19 @@ TIPS = [
     "Start your day with a glass of water.",
     "Add lemon or cucumber for natural flavor.",
     "Set small hourly reminders and sip regularly.",
+    "Carry a lightweight bottle whenever you go outside.",
+    "Take a few sips before starting any study session.",
+    "Refill your bottle every time it becomes half empty",
+    "Use a bottle with measurement markings to track progress.",
+    "Drink water before meals to stay hydrated and support digestion.",
+    "Keep a reminder note on your laptop or study table.",
+    "Choose water instead of soft drinks during breaks.",
+    "Drink one glass after physical activities or sports.",
+    "Use apps or watch timers to remind you to take small sips.",
+    "Keep chilled water or room-temperature water depending on your preference to make drinking easier.",
+    "Keep extra bottles at home so you never run out.",
+    "Drink gradually throughout the day instead of all at once.",
+    "Track daily intake in a simple journal or on your phone.",
 ]
 
 # -----------------------
