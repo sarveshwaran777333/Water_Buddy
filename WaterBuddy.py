@@ -225,6 +225,10 @@ def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
 # -----------------------
 def apply_theme(theme_name: str):
 
+    # NOTE: these CSS blocks include a stronger rule that targets nested spans
+    # inside the metric value to ensure Streamlit's internal nesting inherits
+    # the intended theme color.
+
     # ---------------------- LIGHT MODE ----------------------
     if theme_name == "Light":
         st.markdown("""
@@ -278,10 +282,12 @@ def apply_theme(theme_name: str):
             color: #006600 !important;
             font-weight: 600 !important;
         }
-        /* Fix for st.metric value text */
+
+        /* Stronger fix for st.metric nested spans (covers span, span span, etc.) */
         div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span {
-        color: inherit !important;   /* makes it use theme color */
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span {
+            color: inherit !important;
         }
 
         </style>
@@ -342,10 +348,12 @@ def apply_theme(theme_name: str):
             color: #0077b6 !important;
             font-weight: 600 !important;
         }
-        /* Fix for st.metric value text */
+
+        /* Stronger fix for st.metric nested spans (covers span, span span, etc.) */
         div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span {
-        color: inherit !important;   /* makes it use theme color */
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span {
+            color: inherit !important;
         }
 
         </style>
@@ -406,12 +414,14 @@ def apply_theme(theme_name: str):
             color: #4caf50 !important;
             font-weight: 600 !important;
         }
-        /* Fix for st.metric value text */
+
+        /* Stronger fix for st.metric nested spans (covers span, span span, etc.) */
         div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span {
-        color: inherit !important;   /* makes it use theme color */
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span {
+            color: inherit !important;
         }
-        
+
         </style>
         """, unsafe_allow_html=True)
 
@@ -440,7 +450,8 @@ if st_lottie is not None:
 # Streamlit app start
 # -----------------------
 st.set_page_config(page_title="WaterBuddy", layout="wide")
-# ensure theme applied early using session_state default (set below)
+
+# session state defaults
 if "theme" not in st.session_state:
     st.session_state.theme = "Light"
 # immediately apply so initial render looks correct
@@ -448,7 +459,6 @@ apply_theme(st.session_state.theme)
 
 st.title("WaterBuddy — Hydration Tracker")
 
-# session state defaults
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "uid" not in st.session_state:
@@ -480,14 +490,14 @@ def login_ui():
                     st.session_state.uid = uid
                     st.session_state.page = "dashboard"
                     st.success("Login successful.")
-                    time.sleep(0.25)
-                    st.rerun()
+                    time.sleep(0.15)
+                    st.experimental_rerun()
                 else:
                     st.error("Invalid username or password.")
     st.markdown("---")
     if st.button("Create new account"):
         st.session_state.page = "signup"
-        st.rerun()
+        st.experimental_rerun()
 
 def signup_ui():
     st.header("Sign Up (username + password)")
@@ -504,15 +514,15 @@ def signup_ui():
                 if uid:
                     st.success("Account created. Please log in.")
                     st.session_state.page = "login"
-                    time.sleep(0.25)
-                    st.rerun()
+                    time.sleep(0.15)
+                    st.experimental_rerun()
                 else:
                     st.error("Username already taken or network error.")
 
     st.markdown("---")
     if st.button("Back to Login"):
         st.session_state.page = "login"
-        st.rerun()
+        st.experimental_rerun()
 
 # -----------------------
 # Dashboard UI (left buttons, right content)
@@ -523,7 +533,7 @@ def dashboard_ui():
         st.error("Missing user id. Please login again.")
         st.session_state.logged_in = False
         st.session_state.page = "login"
-        st.rerun()
+        st.experimental_rerun()
         return
 
     profile = get_user_profile(uid)
@@ -545,7 +555,7 @@ def dashboard_ui():
         if theme_choice != st.session_state.theme:
             st.session_state.theme = theme_choice
             apply_theme(theme_choice)
-            # update immediately visually (no rerun required)
+            # theme applied immediately
 
         st.markdown("")  # spacer
 
@@ -561,13 +571,14 @@ def dashboard_ui():
             st.session_state.uid = None
             st.session_state.page = "login"
             st.session_state.nav = "Home"
-            st.rerun()
+            st.experimental_rerun()
 
         st.markdown("---")
         st.write("Tip of the day")
         st.info(st.session_state.tip)
         if st.button("New tip", key="new_tip"):
             st.session_state.tip = random.choice(TIPS)
+            # no rerun required; value updates in-place
 
     # ensure theme for right pane
     apply_theme(st.session_state.theme)
@@ -619,7 +630,7 @@ def dashboard_ui():
 
             # milestone messages
             if percent >= 100:
-                st.success("🎉 Amazing — you reached your daily goal!")
+                st.success("Amazing — you reached your daily goal!")
             elif percent >= 75:
                 st.info("Great — 75% reached!")
             elif percent >= 50:
@@ -638,7 +649,7 @@ def dashboard_ui():
                     ok = set_today_intake(uid, new_val)
                     if ok:
                         st.success(f"Added {DEFAULT_QUICK_LOG_ML} ml.")
-                        st.rerun()
+                        st.experimental_rerun()
                     else:
                         st.error("Failed to update. Check network/DB rules.")
 
@@ -652,7 +663,7 @@ def dashboard_ui():
                         ok = set_today_intake(uid, new_val)
                         if ok:
                             st.success(f"Added {int(custom)} ml.")
-                            st.rerun()
+                            st.experimental_rerun()
                         else:
                             st.error("Failed to update. Check network/DB rules.")
 
@@ -661,7 +672,7 @@ def dashboard_ui():
                     ok = reset_today_intake(uid)
                     if ok:
                         st.info("Reset successful.")
-                        st.rerun()
+                        st.experimental_rerun()
                     else:
                         st.error("Failed to reset. Check network/DB rules.")
 
@@ -703,7 +714,7 @@ def dashboard_ui():
             st.session_state.uid = None
             st.session_state.page = "login"
             st.session_state.nav = "Home"
-            st.rerun()
+            st.experimental_rerun()
 
 # -----------------------
 # App routing
