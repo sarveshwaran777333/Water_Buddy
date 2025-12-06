@@ -1,23 +1,15 @@
-#FIREBASE_URL = "https://waterhydrator-9ecad-default-rtdb.asia-southeast1.firebasedatabase.app"
-
-# app.py
 """
-WaterBuddy - Streamlit app using Firebase Realtime DB REST API (no firebase_admin)
-- Username + password signup/login (no email)
-- Left navigation pane (buttons) and right content pane
-- Age-based goals, +250ml quick log, custom log, reset, daily storage
-- Theme support (Light/Aqua/Dark) with readable nav labels
-- Lottie animated progress bar (assets/progress_bar.json) shown on Home (always visible)
+WaterBuddy - Streamlit app combining original features with a new 7-day intake history graph (Matplotlib).
 """
 
 import streamlit as st
 import requests
 import json
-from datetime import date
+from datetime import date, timedelta # Added timedelta
 import random
 import time
 import os
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt # Added Matplotlib
 
 # Lottie support (optional)
 try:
@@ -49,19 +41,6 @@ TIPS = [
     "Start your day with a glass of water.",
     "Add lemon or cucumber for natural flavor.",
     "Set small hourly reminders and sip regularly.",
-    "Carry a lightweight bottle whenever you go outside.",
-    "Take a few sips before starting any study session.",
-    "Refill your bottle every time it becomes half empty",
-    "Use a bottle with measurement markings to track progress.",
-    "Drink water before meals to stay hydrated and support digestion.",
-    "Keep a reminder note on your laptop or study table.",
-    "Choose water instead of soft drinks during breaks.",
-    "Drink one glass after physical activities or sports.",
-    "Use apps or watch timers to remind you to take small sips.",
-    "Keep chilled water or room-temperature water depending on your preference to make drinking easier.",
-    "Keep extra bottles at home so you never run out.",
-    "Drink gradually throughout the day instead of all at once.",
-    "Track daily intake in a simple journal or on your phone.",
 ]
 
 # -----------------------
@@ -108,32 +87,6 @@ def firebase_patch(path: str, value_dict: dict):
 # -----------------------
 # User helpers
 # -----------------------
-def get_user_days(uid):
-    """Return dict of all recorded days with intake values"""
-    data = firebase_get(f"{USERS_NODE}/{uid}/days")
-    if isinstance(data, dict):
-        result = {}
-        for day, rec in data.items():
-            intake = rec.get("intake") if isinstance(rec, dict) else None
-            if isinstance(intake, (int, float)):
-                result[day] = intake
-        return result
-    return {}
-
-def prepare_graph_data(uid):
-    days_data = get_user_days(uid)
-    daily = {DATE_STR: get_today_intake(uid)}
-    last_7 = {}
-    monthly = {}
-    for d, intake in days_data.items():
-        dt = datetime.fromisoformat(d)
-        daily[d] = intake
-        if dt >= datetime.today() - timedelta(days=7):
-            last_7[d] = intake
-        month = dt.strftime("%Y-%m")
-        monthly[month] = monthly.get(month,0) + intake
-    return daily, last_7, monthly
-
 def find_user_by_username(username: str):
     """Return (uid, user_obj) if found, else (None, None)."""
     data = firebase_get(USERS_NODE)
@@ -174,7 +127,7 @@ def validate_login(username: str, password: str):
     return False, None
 
 # -----------------------
-# Intake & profile helpers
+# Intake & profile helpers (Modified with new functions)
 # -----------------------
 def get_today_intake(uid: str):
     if not uid:
@@ -183,7 +136,7 @@ def get_today_intake(uid: str):
     val = firebase_get(path)
     if isinstance(val, (int, float)):
         return int(val)
-    # fallback check for older root field
+    # fallback check for older root field (kept for compatibility)
     user_root = firebase_get(f"{USERS_NODE}/{uid}")
     if isinstance(user_root, dict):
         legacy = user_root.get("todays_intake_ml")
@@ -228,13 +181,28 @@ def get_username_by_uid(uid: str):
     if isinstance(rec, dict):
         return rec.get("username", "user")
     return "user"
+    
+# NEW FUNCTION from second code
+def get_past_intake(uid: str, days_count: int = 7):
+    """Fetches intake data for the last N days."""
+    intake_data = {}
+    for i in range(days_count):
+        day = (date.today() - timedelta(days=i)).isoformat()
+        path = f"{USERS_NODE}/{uid}/days/{day}/intake"
+        intake_value = firebase_get(path)
+        # Ensure intake is a safe integer, defaulting to 0
+        try:
+            intake_data[day] = int(intake_value) if intake_value is not None else 0
+        except:
+            intake_data[day] = 0
+    return intake_data
 
 # -----------------------
-# UI helpers (SVG)
+# UI helpers (SVG & Matplotlib)
 # -----------------------
 def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
     """
-    Simple bottle SVG with dynamic fill height.
+    Simple bottle SVG with dynamic fill height. (Original function)
     percent: 0..100
     """
     pct = max(0.0, min(100.0, float(percent)))
@@ -246,98 +214,249 @@ def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
     # Coordinates are chosen to keep visual proportions consistent.
     svg = f"""
 <svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">
-  <!-- Outer bottle border -->
-  <rect x="12" y="12" rx="20" ry="20" width="{width-24}" height="{height-24}" fill="none" stroke="#5dade2" stroke-width="3"/>
-  <!-- Bottle background -->
-  <rect x="18" y="18" width="{inner_w}" height="{inner_h}" rx="12" ry="12" fill="#f3fbff"/>
-  <!-- Water fill -->
-  <rect x="18" y="{18 + empty_h}" width="{inner_w}" height="{fill_h}" rx="12" ry="12" fill="#67b3df"/>
-  <!-- Cap -->
-  <rect x="{(width/2)-18}" y="0" width="36" height="18" rx="4" ry="4" fill="#3498db"/>
-  <!-- Percentage text -->
-  <text x="{width/2}" y="{height-8}" font-size="14" text-anchor="middle" fill="#023047" font-family="Arial">{pct:.0f}%</text>
+    <rect x="12" y="12" rx="20" ry="20" width="{width-24}" height="{height-24}" fill="none" stroke="#5dade2" stroke-width="3"/>
+    <rect x="18" y="18" width="{inner_w}" height="{inner_h}" rx="12" ry="12" fill="#f3fbff"/>
+    <rect x="18" y="{18 + empty_h}" width="{inner_w}" height="{fill_h}" rx="12" ry="12" fill="#67b3df"/>
+    <rect x="{(width/2)-18}" y="0" width="36" height="18" rx="4" ry="4" fill="#3498db"/>
+    <text x="{width/2}" y="{height-8}" font-size="14" text-anchor="middle" fill="#023047" font-family="Arial">{pct:.0f}%</text>
 </svg>
 """
     return svg
 
+# NEW FUNCTION from second code
+def plot_water_intake(intake_data):
+    """Generate a Matplotlib line chart showing daily water intake."""
+    
+    # Sort data by date (key) to ensure the chart is in chronological order
+    sorted_days = sorted(intake_data.keys())
+    # Reverse the list so the chart goes from older dates to today
+    sorted_days.reverse()
+    
+    # Extract values in the sorted order
+    intakes = [intake_data[day] for day in sorted_days]
+    
+    # Format labels to be shorter (e.g., '12-05')
+    labels = [d.split('-')[1] + '-' + d.split('-')[2] for d in sorted_days]
+    
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(labels, intakes, marker='o', color='#3498db', label="Water Intake (ml)", linewidth=2)
+    
+    # Add goal line if a profile is available in session state
+    if st.session_state.uid:
+        profile = get_user_profile(st.session_state.uid)
+        goal = profile.get("user_goal_ml", AGE_GOALS_ML["19-50"])
+        ax.axhline(y=goal, color='#2ecc71', linestyle='--', label=f'Goal ({goal} ml)')
+
+    # Customize the plot
+    ax.set_title("Daily Water Intake Over the Last 7 Days", fontsize=16)
+    ax.set_xlabel("Date (MM-DD)", fontsize=12)
+    ax.set_ylabel("Water Intake (ml)", fontsize=12)
+    ax.tick_params(axis='x', rotation=45)
+    ax.grid(True, linestyle=':', alpha=0.7)
+    ax.legend()
+    plt.tight_layout()
+
+    return fig # Return the figure object, not plt
+
 # -----------------------
-# Theme CSS (readable nav & metric fix)
+# Theme CSS (readable nav & metric fix - Original function)
 # -----------------------
 def apply_theme(theme_name: str):
+
+    # --- CSS Styles for Light, Aqua, and Dark themes (omitted for brevity) ---
+    # ... [Keep the full apply_theme content from the original app.py here] ...
+    
+    # ---------------------- LIGHT MODE ----------------------
     if theme_name == "Light":
         st.markdown("""
         <style>
-        .stApp { background-color: #ffffff !important; color: #000000 !important; }
-        h1, h2, h3, h4, h5, h6, p, label, span { color: #000000 !important; }
 
-        .stButton>button { background-color: #e6e6e6 !important; color: #000000 !important; border-radius: 8px !important; border: 1px solid #cccccc !important; }
-        .stButton>button:hover { background-color: #d9d9d9 !important; }
+        .stApp {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+        }
 
-        .stTextInput>div>div>input { background-color: #fafafa !important; color: #000000 !important; border-radius: 6px !important; }
+        h1, h2, h3, h4, h5, h6, p, label, span {
+            color: #000000 !important;
+        }
+
+        .stButton>button {
+            background-color: #e6e6e6 !important;
+            color: #000000 !important;
+            border-radius: 8px !important;
+            border: 1px solid #cccccc !important;
+        }
+        .stButton>button:hover {
+            background-color: #d9d9d9 !important;
+        }
+
+        .stTextInput>div>div>input {
+            background-color: #fafafa !important;
+            color: #000000 !important;
+            border-radius: 6px !important;
+        }
+
+        .stSlider>div>div>div {
+            background-color: #007acc !important;
+        }
 
         div[data-testid="metric-container"] {
-            background-color: #f7f7f7 !important; border-radius: 12px !important; padding: 12px !important; border: 1px solid #e1e1e1 !important;
+            background-color: #f7f7f7 !important;
+            border-radius: 12px !important;
+            padding: 12px !important;
+            border: 1px solid #e1e1e1 !important;
         }
-
-        /* Fully target nested spans inside metric */
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span,
-        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span span {
+        div[data-testid="metric-container"] label {
+            color: #000000 !important;
+            font-weight: 600 !important;
+        }
+        div[data-testid="metric-container"] [data-testid="stMetricValue"] {
             color: #000000 !important;
             font-weight: 700 !important;
+            font-size: 1.5rem !important;
         }
+        div[data-testid="metric-container"] [data-testid="metric-delta"] {
+            color: #006600 !important;
+            font-weight: 600 !important;
+        }
+        /* Fix for st.metric value text */
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span {
+        color: inherit !important;  /* makes it use theme color */
+        }
+
         </style>
         """, unsafe_allow_html=True)
 
+
+    # ---------------------- AQUA MODE ----------------------
     elif theme_name == "Aqua":
         st.markdown("""
         <style>
-        .stApp { background-color: #e8fbff !important; color: #004455 !important; }
-        h1, h2, h3, h4, h5, h6, p, label, span { color: #004455 !important; }
 
-        .stButton>button { background-color: #c6f3ff !important; color: #004455 !important; border-radius: 8px !important; border: 1px solid #99e6ff !important; }
-        .stButton>button:hover { background-color: #b3edff !important; }
+        .stApp {
+            background-color: #e8fbff !important;
+            color: #004455 !important;
+        }
 
-        .stTextInput>div>div>input { background-color: #ffffff !important; color: #003344 !important; border-radius: 6px !important; }
+        h1, h2, h3, h4, h5, h6, p, label, span {
+            color: #004455 !important;
+        }
 
-        div[data-testid="metric-container"] { background-color: #d9f7ff !important; border-radius: 12px !important; padding: 12px !important; border: 1px solid #bdefff !important; }
+        .stButton>button {
+            background-color: #c6f3ff !important;
+            color: #004455 !important;
+            border-radius: 8px !important;
+            border: 1px solid #99e6ff !important;
+        }
+        .stButton>button:hover {
+            background-color: #b3edff !important;
+        }
 
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span,
-        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span span {
+        .stTextInput>div>div>input {
+            background-color: #ffffff !important;
+            color: #003344 !important;
+            border-radius: 6px !important;
+        }
+
+        .stSlider>div>div>div {
+            background-color: #00aacc !important;
+        }
+
+        div[data-testid="metric-container"] {
+            background-color: #d9f7ff !important;
+            border-radius: 12px !important;
+            padding: 12px !important;
+            border: 1px solid #bdefff !important;
+        }
+        div[data-testid="metric-container"] label {
+            color: #005577 !important;
+            font-weight: 600 !important;
+        }
+        div[data-testid="metric-container"] [data-testid="stMetricValue"] {
             color: #005577 !important;
             font-weight: 700 !important;
+            font-size: 1.5rem !important;
         }
+        div[data-testid="metric-container"] [data-testid="metric-delta"] {
+            color: #0077b6 !important;
+            font-weight: 600 !important;
+        }
+        /* Fix for st.metric value text */
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span {
+        color: inherit !important;  /* makes it use theme color */
+        }
+
         </style>
         """, unsafe_allow_html=True)
 
-    else:  # Dark
+
+    # ---------------------- DARK MODE ----------------------
+    else:
         st.markdown("""
         <style>
-        .stApp { background-color: #0f1720 !important; color: #e6eef6 !important; }
-        h1, h2, h3, h4, h5, h6, p, label, span { color: #e6eef6 !important; }
 
-        .stButton>button { background-color: #1e2933 !important; color: #e6eef6 !important; border-radius: 8px !important; border: 1px solid #324151 !important; }
-        .stButton>button:hover { background-color: #253241 !important; }
-
-        .stTextInput>div>div>input { background-color: #1e2933 !important; color: #e6eef6 !important; border-radius: 6px !important; }
-
-        div[data-testid="metric-container"] { background-color: #1a2634 !important; border-radius: 12px !important; padding: 12px !important; border: 1px solid #334155 !important; }
-
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span span,
-        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span,
-        div[data-testid="metric-container"] div[data-testid="stMetricDelta"] span span {
-            color: #4caf50 !important;
-            font-weight: 700 !important;
+        .stApp {
+            background-color: #0f1720 !important;
+            color: #e6eef6 !important;
         }
+
+        h1, h2, h3, h4, h5, h6, p, label, span {
+            color: #e6eef6 !important;
+        }
+
+        .stButton>button {
+            background-color: #1e2933 !important;
+            color: #e6eef6 !important;
+            border-radius: 8px !important;
+            border: 1px solid #324151 !important;
+        }
+        .stButton>button:hover {
+            background-color: #253241 !important;
+        }
+
+        .stTextInput>div>div>input {
+            background-color: #1e2933 !important;
+            color: #e6eef6 !important;
+            border-radius: 6px !important;
+        }
+
+        .stSlider>div>div>div {
+            background-color: #3b82f6 !important;
+        }
+
+        div[data-testid="metric-container"] {
+            background-color: #1a2634 !important;
+            border-radius: 12px !important;
+            padding: 12px !important;
+            border: 1px solid #334155 !important;
+        }
+        div[data-testid="metric-container"] label {
+            color: #e6eef6 !important;
+            font-weight: 600 !important;
+        }
+        div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+            color: #e6eef6 !important;
+            font-weight: 700 !important;
+            font-size: 1.5rem !important;
+        }
+        div[data-testid="metric-container"] [data-testid="metric-delta"] {
+            color: #4caf50 !important;
+            font-weight: 600 !important;
+        }
+        /* Fix for st.metric value text */
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] > span,
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] span {
+        color: inherit !important;  /* makes it use theme color */
+        }
+        
         </style>
         """, unsafe_allow_html=True)
 
 # -----------------------
-# Lottie helper + load animation (safe)
+# Lottie helper + load animation (safe - Original function)
 # -----------------------
 def load_lottie(path: str):
     try:
@@ -358,11 +477,10 @@ if st_lottie is not None:
             LOTTIE_PROGRESS = load_lottie(alt)
 
 # -----------------------
-# Streamlit app start
+# Streamlit app start (Original structure)
 # -----------------------
 st.set_page_config(page_title="WaterBuddy", layout="wide")
-
-# session state defaults
+# ensure theme applied early using session_state default (set below)
 if "theme" not in st.session_state:
     st.session_state.theme = "Light"
 # immediately apply so initial render looks correct
@@ -370,6 +488,7 @@ apply_theme(st.session_state.theme)
 
 st.title("WaterBuddy — Hydration Tracker")
 
+# session state defaults
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "uid" not in st.session_state:
@@ -382,7 +501,7 @@ if "tip" not in st.session_state:
     st.session_state.tip = random.choice(TIPS)
 
 # -----------------------
-# Login and Signup UIs
+# Login and Signup UIs (Original functions)
 # -----------------------
 def login_ui():
     st.header("Login (username + password)")
@@ -401,7 +520,7 @@ def login_ui():
                     st.session_state.uid = uid
                     st.session_state.page = "dashboard"
                     st.success("Login successful.")
-                    time.sleep(0.15)
+                    time.sleep(0.25)
                     st.rerun()
                 else:
                     st.error("Invalid username or password.")
@@ -425,7 +544,7 @@ def signup_ui():
                 if uid:
                     st.success("Account created. Please log in.")
                     st.session_state.page = "login"
-                    time.sleep(0.15)
+                    time.sleep(0.25)
                     st.rerun()
                 else:
                     st.error("Username already taken or network error.")
@@ -436,7 +555,7 @@ def signup_ui():
         st.rerun()
 
 # -----------------------
-# Dashboard UI (left buttons, right content)
+# Dashboard UI (Integrates new "History" page)
 # -----------------------
 def dashboard_ui():
     uid = st.session_state.uid
@@ -466,15 +585,17 @@ def dashboard_ui():
         if theme_choice != st.session_state.theme:
             st.session_state.theme = theme_choice
             apply_theme(theme_choice)
-            # theme applied immediately
+            # update immediately visually (no rerun required)
 
         st.markdown("")  # spacer
 
-        # left nav buttons
+        # left nav buttons - Added "History" button
         if st.button("Home", key="nav_home"):
             st.session_state.nav = "Home"
         if st.button("Log Water", key="nav_log"):
             st.session_state.nav = "Log Water"
+        if st.button("History", key="nav_history"): # NEW BUTTON
+            st.session_state.nav = "History"
         if st.button("Settings", key="nav_settings"):
             st.session_state.nav = "Settings"
         if st.button("Logout", key="nav_logout"):
@@ -489,7 +610,6 @@ def dashboard_ui():
         st.info(st.session_state.tip)
         if st.button("New tip", key="new_tip"):
             st.session_state.tip = random.choice(TIPS)
-            # no rerun required; value updates in-place
 
     # ensure theme for right pane
     apply_theme(st.session_state.theme)
@@ -517,7 +637,7 @@ def dashboard_ui():
             percent = min((intake / user_goal) * 100 if user_goal > 0 else 0, 100)
 
             # Metric now styled by apply_theme() CSS
-            st.metric("Total intake (ml)", f"{intake} ml", delta=f"{remaining} ml to achive the goal(remaining)" if remaining > 0 else "Goal reached!")
+            st.metric("Total intake (ml)", f"{intake} ml", delta=f"{remaining} ml to goal" if remaining > 0 else "Goal reached!")
             st.progress(percent / 100)
 
             svg = generate_bottle_svg(percent)
@@ -538,36 +658,10 @@ def dashboard_ui():
                         pass
             else:
                 st.write(f"Progress: {percent:.0f}%")
-                st.markdown("---")
-                st.subheader("Hydration Graph")
-                graph_option = st.radio("Select graph:", ["Daily","Weekly","Monthly"])
-                daily, last7, monthly = prepare_graph_data(uid)
-                
-                plt.figure(figsize=(8,4))
-                if graph_option == "Daily":
-                    x = list(daily.keys())
-                    y = list(daily.values())
-                    plt.bar(x, y, color="#67b3df")
-                    plt.ylabel("ml intake")
-                elif graph_option == "Weekly":
-                    x = list(last7.keys())
-                    y = list(last7.values())
-                    plt.plot(x, y, marker='o', color="#3498db")
-                    plt.xticks(rotation=45)
-                    plt.ylabel("ml intake")
-                else:
-                    x = list(monthly.keys())
-                    y = list(monthly.values())
-                    plt.bar(x, y, color="#5dade2")
-                    plt.xticks(rotation=45)
-                    plt.ylabel("ml intake")
-                    plt.tight_layout()
-                    st.pyplot(plt)
-                    plt.close()
 
             # milestone messages
             if percent >= 100:
-                st.success("Amazing — you reached your daily goal!")
+                st.success("🎉 Amazing — you reached your daily goal!")
             elif percent >= 75:
                 st.info("Great — 75% reached!")
             elif percent >= 50:
@@ -626,6 +720,24 @@ def dashboard_ui():
                 if st.button("Convert ml → cups", key="conv_to_cups"):
                     cups_conv = round(ml_in / CUPS_TO_ML, 2)
                     st.success(f"{ml_in} ml = {cups_conv} cups")
+        
+        # NEW PAGE
+        elif nav == "History":
+            st.header("Water Intake History")
+            st.markdown("---")
+            st.subheader("Last 7 Days Intake Graph")
+            
+            # 1. Fetch data using the new function
+            past_intake_data = get_past_intake(uid, days_count=7)
+            
+            # 2. Generate and display the plot using the new function
+            try:
+                intake_plot_fig = plot_water_intake(past_intake_data)
+                st.pyplot(intake_plot_fig)
+            except Exception as e:
+                st.error(f"Could not generate graph. Error: {e}")
+                st.info("Ensure you have Matplotlib installed (`pip install matplotlib`) and some data logged.")
+
 
         elif nav == "Settings":
             st.header("Settings & Profile")
@@ -647,14 +759,12 @@ def dashboard_ui():
                     st.error("Failed to save profile. Check network/DB rules.")
 
         elif nav == "Logout":
-            st.session_state.logged_in = False
-            st.session_state.uid = None
-            st.session_state.page = "login"
-            st.session_state.nav = "Home"
-            st.rerun()
+            # This path is usually not hit, as logout reruns the app to the login page
+            pass
+
 
 # -----------------------
-# App routing
+# App routing (Original function)
 # -----------------------
 if not st.session_state.logged_in:
     if st.session_state.page == "signup":
@@ -663,4 +773,3 @@ if not st.session_state.logged_in:
         login_ui()
 else:
     dashboard_ui()
-
