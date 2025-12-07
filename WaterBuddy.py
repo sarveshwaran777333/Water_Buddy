@@ -5,14 +5,14 @@ import json
 import base64
 import random
 import matplotlib.pyplot as plt
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 import time
 import os
 try:
     from streamlit_lottie import st_lottie
 except Exception:
     st_lottie = None
-FIREBASE_URL = "https://waterhydrator-9ecad-default-rtdb.asia-southeast1.in-asia.firebasedatabase.app"
+FIREBASE_URL = "https://waterhydrator-9ecad-default-rtdb.asia-southeast1.firebasedatabase.app"
 USERS_NODE = "users"
 REQUEST_TIMEOUT = 8
 TODAY = date.today().isoformat()
@@ -118,36 +118,11 @@ def get_intake(uid: str) -> int:
         return int(raw) if raw is not None else 0
     except:
         return 0
-def get_log_entries(uid: str) -> list:
-    entries = fb_get(f"{USERS_NODE}/{uid}/days/{TODAY}/log_entries")
-    if not isinstance(entries, dict):
-        return []
-    # Convert Firebase object (dict) to a sorted list of entries
-    # The keys are push IDs, which contain timestamp info (not strictly sorted, but unique)
-    sorted_entries = sorted(entries.values(), key=lambda x: x.get('timestamp', ''))
-    return sorted_entries
 def update_intake(uid: str, amount: int) -> bool:
     validated_amount = max(0, amount)
     return fb_patch(f"{USERS_NODE}/{uid}/days/{TODAY}", {"intake": validated_amount})
-def log_water_entry(uid: str, amount: int) -> bool:
-    if amount <= 0: return False
-    timestamp = datetime.now().isoformat()
-    entry = {
-        "amount_ml": amount,
-        "timestamp": timestamp,
-    }
-    response = fb_post(f"{USERS_NODE}/{uid}/days/{TODAY}/log_entries", entry)
-    return response is not None
 def reset_intake(uid: str) -> bool:
-    # Reset intake and delete all log entries
-    fb_patch(f"{USERS_NODE}/{uid}/days/{TODAY}", {"intake": 0})
-    # Deleting the node for log_entries
-    try:
-        requests.delete(fb_path(f"{USERS_NODE}/{uid}/days/{TODAY}/log_entries"), timeout=REQUEST_TIMEOUT)
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"Firebase DELETE error on log entries: {e}")
-        return False
+    return update_intake(uid, 0)
 def get_history(uid: str, days: int = 7) -> dict:
     history_data = {}
     today_date = date.today()
@@ -168,7 +143,6 @@ DEFAULT_STATE = {
     "nav": "Home",
     "theme": "Light",
     "tip": "",
-    "log_update": 0 # Used to force update the log view
 }
 def initialize_session_state():
     for key, value in DEFAULT_STATE.items():
@@ -351,10 +325,8 @@ def view_log(uid: str, intake: int, goal: int):
     col1, col2 = st.columns(2)
     with col1:
         if st.button(f"➕ Add {DEFAULT_QUICK_ADD} ml", use_container_width=True):
-            if log_water_entry(uid, DEFAULT_QUICK_ADD):
-                new_intake = intake + DEFAULT_QUICK_ADD
-                update_intake(uid, new_intake)
-                st.session_state.log_update += 1
+            new_intake = intake + DEFAULT_QUICK_ADD
+            if update_intake(uid, new_intake):
                 st.success(f"Added {DEFAULT_QUICK_ADD} ml. New total: {new_intake} ml.")
                 st.rerun()
             else:
@@ -362,8 +334,7 @@ def view_log(uid: str, intake: int, goal: int):
     with col2:
         if st.button("🔄 Reset Today's Intake", use_container_width=True):
             if reset_intake(uid):
-                st.session_state.log_update += 1
-                st.info("Today's intake has been reset to 0 ml (including log entries).")
+                st.info("Today's intake has been reset to 0 ml.")
                 st.rerun()
             else:
                 st.error("Failed to reset intake.")
@@ -373,10 +344,8 @@ def view_log(uid: str, intake: int, goal: int):
         custom = st.number_input("Enter amount to add (ml):", min_value=0, step=50)
         submitted = st.form_submit_button("Add Custom Amount")
         if submitted and custom > 0:
-            if log_water_entry(uid, custom):
-                new_intake = intake + custom
-                update_intake(uid, new_intake)
-                st.session_state.log_update += 1
+            new_intake = intake + custom
+            if update_intake(uid, new_intake):
                 st.success(f"Added {custom} ml. New total: {new_intake} ml.")
                 st.rerun()
             else:
@@ -392,159 +361,6 @@ def view_log(uid: str, intake: int, goal: int):
         ml_in = st.number_input("Milliliters to Cups (ml):", min_value=0.0, step=50.0)
         cups_result = round(ml_in / CUPS_TO_ML, 2)
         st.markdown(f"Result: **{cups_result} cups**")
-def view_progress_log(uid: str, goal: int, intake: int):
-    st.header("🕒 Hourly Water Log")
-    st.markdown(f"Visualizing your **{intake} ml** intake towards your **{goal} ml** goal.")
-    st.markdown("---")
-    log_entries = get_log_entries(uid)
-    log_data_list = []
-    # Convert log entries into JSON format for JavaScript
-    for entry in log_entries:
-        try:
-            ts = datetime.fromisoformat(entry['timestamp'])
-            log_data_list.append({
-                "hour": ts.hour,
-                "amount": entry['amount_ml']
-            })
-        except:
-            continue
-    log_data_json = json.dumps(log_data_list)
-    total_intake = intake
-    # JavaScript/HTML/CSS for the Circular Progress Clock
-    progress_clock_code = f"""
-    (function() {{
-        const LOG_DATA = {log_data_json};
-        const TOTAL_GOAL = {goal};
-        const TOTAL_INTAKE = {total_intake};
-        const COLOR_WATER = "#3498db";
-        const COLOR_GOAL_ACHIEVED = "#2ecc71";
-        const COLOR_BACKGROUND = "#eee";
-        const COLOR_TEXT = getComputedStyle(document.body).getPropertyValue('--text-color').trim() || '#000000';
-        const canvas = document.getElementById('logClockCanvas');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
-        const outerRadius = 180;
-        const barWidth = 15;
-        const hourRadius = 120;
-        const hourDotRadius = 6;
-        const hourStart = 6;
-        const hourEnd = 22;
-        const totalLogHours = hourEnd - hourStart + 1;
-        // Group amounts by hour
-        const hourlyAmounts = new Array(24).fill(0);
-        LOG_DATA.forEach(entry => {{
-            hourlyAmounts[entry.hour] += entry.amount;
-        }});
-        // Determine the maximum hourly amount for scaling the bars
-        let maxHourlyAmount = 0;
-        for (let h = hourStart; h <= hourEnd; h++) {{
-            maxHourlyAmount = Math.max(maxHourlyAmount, hourlyAmounts[h]);
-        }}
-        // Function to draw the clock face and hour markers
-        function drawClockFace() {{
-            ctx.strokeStyle = COLOR_BACKGROUND;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, outerRadius, 0, 2 * Math.PI);
-            ctx.stroke();
-            // Draw hour markers
-            for (let i = 0; i < 24; i++) {{
-                const angle = (i / 24) * 2 * Math.PI - Math.PI / 2;
-                const x = centerX + Math.cos(angle) * hourRadius;
-                const y = centerY + Math.sin(angle) * hourRadius;
-                ctx.fillStyle = (i >= hourStart && i <= hourEnd) ? COLOR_TEXT : '#ccc';
-                ctx.beginPath();
-                ctx.arc(x, y, hourDotRadius, 0, 2 * Math.PI);
-                ctx.fill();
-                // Hour text
-                ctx.fillStyle = COLOR_TEXT;
-                ctx.font = '14px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                const textX = centerX + Math.cos(angle) * (hourRadius + 20);
-                const textY = centerY + Math.sin(angle) * (hourRadius + 20);
-                ctx.fillText(i, textX, textY);
-            }}
-        }}
-        // Function to draw the hourly log data as arcs
-        function drawHourlyLog() {{
-            for (let h = hourStart; h <= hourEnd; h++) {{
-                const amount = hourlyAmounts[h];
-                if (amount === 0) continue;
-                // Scale the bar thickness based on the amount logged, up to a max thickness
-                const scaleFactor = (maxHourlyAmount > 0) ? amount / maxHourlyAmount : 0;
-                const thickness = barWidth * (0.2 + scaleFactor * 0.8);
-                // Calculate angles: Start at the beginning of the hour (h) and end at the beginning of the next hour (h+1)
-                // Angles are calculated based on 24 hours, starting at the top (i.e., 12 AM)
-                const startAngle = (h / 24) * 2 * Math.PI - Math.PI / 2;
-                const endAngle = ((h + 1) / 24) * 2 * Math.PI - Math.PI / 2;
-                ctx.beginPath();
-                ctx.lineWidth = thickness;
-                ctx.strokeStyle = COLOR_WATER;
-                // Draw the arc section
-                ctx.arc(centerX, centerY, outerRadius - barWidth / 2, startAngle, endAngle);
-                ctx.stroke();
-            }}
-        }}
-        // Function to draw the central metric
-        function drawCenterMetric() {{
-            const percent = Math.min(100, (TOTAL_INTAKE / TOTAL_GOAL) * 100);
-            const metricColor = (TOTAL_INTAKE >= TOTAL_GOAL) ? COLOR_GOAL_ACHIEVED : COLOR_WATER;
-            // Draw a thick progress arc for the total goal
-            ctx.beginPath();
-            ctx.lineWidth = barWidth;
-            ctx.strokeStyle = metricColor;
-            const progressAngle = (percent / 100) * 2 * Math.PI;
-            ctx.arc(centerX, centerY, outerRadius, -Math.PI / 2, -Math.PI / 2 + progressAngle);
-            ctx.stroke();
-            // Center Text
-            ctx.fillStyle = metricColor;
-            ctx.font = '50px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(Math.round(percent) + '%', centerX, centerY - 20);
-            ctx.font = '20px Arial';
-            ctx.fillStyle = COLOR_TEXT;
-            ctx.fillText(TOTAL_INTAKE + ' / ' + TOTAL_GOAL + ' ml', centerX, centerY + 20);
-            ctx.font = '14px Arial';
-            ctx.fillText('Hourly Intake Intensity', centerX, centerY + outerRadius + 30);
-        }}
-        // Main draw function
-        function draw() {{
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawClockFace();
-            drawHourlyLog();
-            drawCenterMetric();
-        }}
-        draw();
-    }})();
-    """
-    html_content = f"""
-    <div style="text-align: center;">
-        <canvas id="logClockCanvas" width="450" height="450" style="margin: 20px;"></canvas>
-    </div>
-    <script>{progress_clock_code}</script>
-    """
-    st.components.v1.html(html_content, height=500)
-    st.markdown("---")
-    st.subheader("Recent Entries")
-    if log_entries:
-        # Prepare log entries for display
-        display_data = []
-        for entry in reversed(log_entries):
-            try:
-                ts = datetime.fromisoformat(entry['timestamp'])
-                display_data.append({
-                    "Time": ts.strftime("%I:%M %p"),
-                    "Amount (ml)": entry['amount_ml']
-                })
-            except:
-                continue
-        st.dataframe(display_data, use_container_width=True, hide_index=True)
-    else:
-        st.info("No water log entries for today yet.")
 def view_history(uid: str, goal: int):
     st.header("📅 Weekly Hydration History")
     history = get_history(uid, 7)
@@ -563,7 +379,7 @@ def view_history(uid: str, goal: int):
         "Intake (ml)": [history[d] for d in reversed(sorted(history.keys()))]
     }
     if table_data["Date"]:
-        st.dataframe(table_data, use_container_width=True, hide_index=True)
+        st.dataframe(table_data)
     else:
         st.info("No historical intake data found for the last 7 days.")
 def view_settings(uid: str, profile: dict):
@@ -849,8 +665,7 @@ def view_runner_game():
     components.html(html_content, height=600)
 def render_sidebar_navigation(uid):
     st.subheader("🧭 Navigation Menu")
-    # Added "Progress Log" to navigation
-    nav_options = ["Home", "Log Water", "Progress Log", "History", "Settings", "Runner Game", "Logout"]
+    nav_options = ["Home", "Log Water", "History", "Settings", "Runner Game", "Logout"]
     for option in nav_options:
         if st.button(option, key=f"nav_{option}", use_container_width=True):
             if option == "Logout":
@@ -925,8 +740,6 @@ def view_dashboard():
             render_dashboard_main(uid, intake, goal, percent)
         elif nav == "Log Water":
             view_log(uid, intake, goal)
-        elif nav == "Progress Log":
-            view_progress_log(uid, goal, intake)
         elif nav == "History":
             view_history(uid, goal)
         elif nav == "Settings":
