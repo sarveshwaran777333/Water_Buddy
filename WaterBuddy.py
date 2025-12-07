@@ -446,7 +446,7 @@ if st_lottie is not None:
 # -----------------------
 # Game UI
 # -----------------------
-def game_ui(robo_path="robo.png"):
+def game_ui(robo_path="assets/robo.png"):
     st.header("WaterBuddy Runner Game! 🤖💧")
     st.write("Collect water droplets (+10 points) and avoid the obstacles (blocks/fire) by pressing the **SPACEBAR**.")
     st.markdown("---")
