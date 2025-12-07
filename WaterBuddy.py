@@ -473,12 +473,16 @@ def view_settings(uid, profile):
 # --------------------------------------------------
 # UI: 2D Runner
 # --------------------------------------------------
+import streamlit as st
+import streamlit.components.v1 as components
+import base64
+
 def view_runner_game():
     st.header("WaterBuddy Runner Game 🤖💧")
     st.write("Press **SPACE** to jump and collect water droplets (blue circles). You can now **land on top** of the obstacles!")
     st.markdown("---")
     
-    # --- Image Loading (Base64 is essential for Streamlit components) ---
+    # --- Image Loading (Encodes ROBO.png to Base64 for the HTML component) ---
     try:
         try:
             with open("assets/ROBO.png", "rb") as f:
@@ -490,7 +494,7 @@ def view_runner_game():
         robo_base64 = base64.b64encode(robo_data).decode()
         robo_url = f"data:image/png;base64,{robo_base64}"
     except FileNotFoundError:
-        st.error("Error: **ROBO.png** file not found. Game cannot load. Please ensure the file exists.")
+        st.error("Error: **ROBO.png** file not found. Game cannot load. Please ensure the file exists in the script directory or an 'assets' folder.")
         return
 
     # --- FULL JAVASCRIPT GAME CODE ---
@@ -501,7 +505,7 @@ def view_runner_game():
     let playerImg = new Image();
     playerImg.src = "{robo_url}";
 
-    // Physics settings for smoother jump arc
+    // Adjusted physics: Lower gravity and jump power for a longer, smoother arc.
     let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 0.7, jumpPower: -15, onGround: true }};
     
     let obstacles = [];
@@ -513,7 +517,7 @@ def view_runner_game():
     // --- INPUT HANDLER (Spacebar Fix) ---
     document.addEventListener("keydown", function(e) {{
         if (e.code === "Space") {{
-            e.preventDefault(); 
+            e.preventDefault(); // Prevents the browser from scrolling
             if (player.onGround) {{
                 player.velocityY = player.jumpPower;
                 player.onGround = false;
@@ -551,8 +555,17 @@ def view_runner_game():
         // Player physics
         player.velocityY += player.gravity; 
         player.y += player.velocityY;
+        
+        // Always reset onGround status unless proven otherwise by collision checks
+        let wasOnGround = player.onGround;
+        player.onGround = false; 
+
         // Check for landing on the ground (base floor)
-        if (player.y >= 350) {{ player.y = 350; player.velocityY = 0; player.onGround = true; }}
+        if (player.y >= 350) {{ 
+            player.y = 350; 
+            player.velocityY = 0; 
+            player.onGround = true; 
+        }}
 
         drawPlayer();
 
@@ -565,7 +578,7 @@ def view_runner_game():
             obs.x -= speed;
             drawObstacle(obs);
             
-            // --- Define Virtual Hitbox ---
+            // --- Define Virtual Hitbox (Lower Front Section for precise contact) ---
             let hitbox_width = 90;
             let hitbox_height = 40;
             let hitbox_x = player.x + (player.width - hitbox_width); 
@@ -581,27 +594,27 @@ def view_runner_game():
 
             if (is_overlapping) {{
                 // 1. Check for TOP-SIDE COLLISION (Landing/Climbing)
-                // If the player is falling (velocityY > 0) AND the player's previous bottom was above the obstacle's top (obs.y)
-                let prev_bottom_y = player.y + player.height - hitbox_height - player.velocityY; 
-                
-                if (player.velocityY > 0 && prev_bottom_y <= obs.y) {{
+                // If the player is falling (velocityY >= 0) and overlaps, snap to the top.
+                if (player.velocityY >= 0) {{ 
                     // Set player precisely on the platform
                     player.y = obs.y - hitbox_height; 
                     player.velocityY = 0;
                     player.onGround = true;
-                    continue; // Skip the death check below
+                    
+                    // Safety clamp: If platform is below base floor, set to base floor
+                    if (player.y >= 350) player.y = 350; 
+                    
+                    continue; // Successfully landed, skip death check.
                 }}
                 
                 // 2. Check for DEATH (Side/Bottom-Up/Head Collision)
-                // If it's still overlapping, and it wasn't a landing, it's a death.
+                // If collision happens and it wasn't a landing, it's a death.
                 alert("Game Over! Final Score: " + score);
                 document.location.reload(); 
             }}
             
-            // Fall-Off Logic: If the robot is standing on the obstacle and the obstacle passes it, set onGround to false.
-            if (player.onGround && player.y + player.height - hitbox_height === obs.y && obs.x + obs.width < hitbox_x) {{
-                player.onGround = false;
-            }}
+            // Fall-Off Logic: If the robot was standing on the base platform (y=350) but now it's not on the ground 
+            // and no obstacle is below it, it will fall thanks to 'player.onGround = false;' at the start of gameLoop.
             
             if (obs.x < -100) obstacles.splice(i, 1);
         }}
@@ -611,6 +624,7 @@ def view_runner_game():
             let drop = droplets[i];
             drop.x -= speed;
             drawDroplet(drop);
+            // Basic AABB check for collectibles
             if (player.x < drop.x + drop.width && 
                 player.x + player.width > drop.x &&
                 player.y < drop.y + drop.height && 
@@ -625,6 +639,7 @@ def view_runner_game():
         ctx.font = "28px Arial";
         ctx.fillText("Score: " + score, 30, 40);
 
+        // Difficulty scaling
         speed += 0.002;
         frame++;
 
@@ -633,6 +648,7 @@ def view_runner_game():
 
     playerImg.onload = gameLoop;
     
+    // --- FOCUS FIX ---
     document.getElementById('gameCanvas').focus();
     """
 
@@ -657,6 +673,8 @@ def view_runner_game():
     """
     
     components.html(html_content, height=600)
+
+    
 # --------------------------------------------------
 # Dashboard / Main App View
 # --------------------------------------------------
