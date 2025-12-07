@@ -475,17 +475,15 @@ def view_settings(uid, profile):
 # --------------------------------------------------
 def view_runner_game():
     st.header("WaterBuddy Runner Game 🤖💧")
-    st.write("Press **SPACE** to jump and collect water droplets (blue circles).")
+    st.write("Press **SPACE** to jump and collect water droplets (blue circles). You can now **land on top** of the obstacles!")
     st.markdown("---")
     
     # --- Image Loading (Base64 is essential for Streamlit components) ---
     try:
-        # Tries assets folder first, then local directory
         try:
             with open("assets/ROBO.png", "rb") as f:
                 robo_data = f.read()
         except FileNotFoundError:
-            # Fallback if no assets folder exists
             with open("ROBO.png", "rb") as f:
                 robo_data = f.read()
                 
@@ -503,7 +501,7 @@ def view_runner_game():
     let playerImg = new Image();
     playerImg.src = "{robo_url}";
 
-    // Adjusted physics: Lower gravity and jump power for a longer, smoother arc.
+    // Physics settings for smoother jump arc
     let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 0.7, jumpPower: -15, onGround: true }};
     
     let obstacles = [];
@@ -515,7 +513,7 @@ def view_runner_game():
     // --- INPUT HANDLER (Spacebar Fix) ---
     document.addEventListener("keydown", function(e) {{
         if (e.code === "Space") {{
-            e.preventDefault(); // Prevents the browser from scrolling
+            e.preventDefault(); 
             if (player.onGround) {{
                 player.velocityY = player.jumpPower;
                 player.onGround = false;
@@ -524,12 +522,10 @@ def view_runner_game():
     }});
 
     function spawnObstacle() {{
-        // Simple Block obstacle
         obstacles.push({{ type: "block", x: canvas.width + 50, y: 380, width: 60, height: 60 }});
     }}
 
     function spawnDroplet() {{
-        // Water Droplet collectible (spawned at random height)
         droplets.push({{ x: canvas.width + 50, y: Math.random() * 200 + 150, width: 30, height: 40 }});
     }}
 
@@ -549,54 +545,68 @@ def view_runner_game():
         ctx.fill();
     }}
 
-    // Note: The general AABB function is no longer called, but the logic 
-    // is manually applied in gameLoop for precision.
-
     function gameLoop() {{
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Player physics
         player.velocityY += player.gravity; 
         player.y += player.velocityY;
+        // Check for landing on the ground (base floor)
         if (player.y >= 350) {{ player.y = 350; player.velocityY = 0; player.onGround = true; }}
 
         drawPlayer();
 
-        // Spawning logic (simple fixed rate)
         if (frame % 70 === 0) spawnObstacle();
         if (frame % 50 === 0) spawnDroplet();
 
-        // Obstacle processing with REFINED COLLISION
+        // Obstacle processing with PRECISION HITBOX and PLATFORM LOGIC
         for (let i = obstacles.length - 1; i >= 0; i--) {{
             let obs = obstacles[i];
             obs.x -= speed;
             drawObstacle(obs);
             
-            // 1. Vertical Check: Robot's bottom must be below obstacle's top (i.e., they are vertically aligned for a hit)
-            let is_vertical_overlap = player.y + player.height > obs.y;
+            // --- Define Virtual Hitbox ---
+            let hitbox_width = 90;
+            let hitbox_height = 40;
+            let hitbox_x = player.x + (player.width - hitbox_width); 
+            let hitbox_y = player.y + (player.height - hitbox_height); 
             
-            // 2. Horizontal Check (Forward Hit Only): 
-            // - Robot's front must pass obstacle's front edge (obs.x)
-            // - Robot's back must not have passed the obstacle's back edge (obs.x + obs.width)
-            let is_horizontal_overlap_forward_only = 
-                player.x + player.width > obs.x && 
-                player.x < obs.x + obs.width; 
+            // --- Full AABB Collision Check ---
+            let is_overlapping = (
+                hitbox_x < obs.x + obs.width && 
+                hitbox_x + hitbox_width > obs.x && 
+                hitbox_y < obs.y + obs.height && 
+                hitbox_y + hitbox_height > obs.y 
+            );
 
-            // Add a small buffer to the player's front side to make it feel like a clean hit
-            let front_hit_buffer = 15; // 15 pixels from the front edge of the robot
-            let is_clean_front_hit = player.x + player.width - front_hit_buffer > obs.x && player.x + player.width < obs.x + obs.width;
-
-
-            if (is_horizontal_overlap_forward_only && is_vertical_overlap) {{
-                // Trigger game over only if the collision is detected
+            if (is_overlapping) {{
+                // 1. Check for TOP-SIDE COLLISION (Landing/Climbing)
+                // If the player is falling (velocityY > 0) AND the player's previous bottom was above the obstacle's top (obs.y)
+                let prev_bottom_y = player.y + player.height - hitbox_height - player.velocityY; 
+                
+                if (player.velocityY > 0 && prev_bottom_y <= obs.y) {{
+                    // Set player precisely on the platform
+                    player.y = obs.y - hitbox_height; 
+                    player.velocityY = 0;
+                    player.onGround = true;
+                    continue; // Skip the death check below
+                }}
+                
+                // 2. Check for DEATH (Side/Bottom-Up/Head Collision)
+                // If it's still overlapping, and it wasn't a landing, it's a death.
                 alert("Game Over! Final Score: " + score);
                 document.location.reload(); 
+            }}
+            
+            // Fall-Off Logic: If the robot is standing on the obstacle and the obstacle passes it, set onGround to false.
+            if (player.onGround && player.y + player.height - hitbox_height === obs.y && obs.x + obs.width < hitbox_x) {{
+                player.onGround = false;
             }}
             
             if (obs.x < -100) obstacles.splice(i, 1);
         }}
 
-        // Droplet processing (Collectibles)
+        // Droplet processing (uses the full bounding box for easier collection)
         for (let i = droplets.length - 1; i >= 0; i--) {{
             let drop = droplets[i];
             drop.x -= speed;
@@ -606,27 +616,23 @@ def view_runner_game():
                 player.y < drop.y + drop.height && 
                 player.y + player.height > drop.y) {{
                 score += 10;
-                droplets.splice(i, 1); // Remove droplet on collection
+                droplets.splice(i, 1);
             }}
             if (drop.x < -50) droplets.splice(i, 1);
         }}
 
-        // Score display
         ctx.fillStyle = "#000";
         ctx.font = "28px Arial";
         ctx.fillText("Score: " + score, 30, 40);
 
-        // Difficulty scaling
         speed += 0.002;
         frame++;
 
         requestAnimationFrame(gameLoop);
     }}
 
-    // Start game when the robot image is loaded
     playerImg.onload = gameLoop;
     
-    // --- FOCUS FIX ---
     document.getElementById('gameCanvas').focus();
     """
 
@@ -650,7 +656,6 @@ def view_runner_game():
     <script>{js_game_code}</script>
     """
     
-    # Render the component
     components.html(html_content, height=600)
 # --------------------------------------------------
 # Dashboard / Main App View
