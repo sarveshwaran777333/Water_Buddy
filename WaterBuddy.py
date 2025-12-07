@@ -478,7 +478,6 @@ def view_runner_game():
     st.write("Press **SPACE** to jump and collect water droplets (blue circles).")
     st.markdown("---")
     
-    # --- Image Loading (simplified nesting) ---
     try:
         try:
             with open("assets/ROBO.png", "rb") as f:
@@ -489,10 +488,9 @@ def view_runner_game():
         robo_base64 = base64.b64encode(robo_data).decode()
         robo_url = f"data:image/png;base64,{robo_base64}"
     except FileNotFoundError:
-        st.error("Error: **ROBO.png** file not found. Game cannot load. Please ensure the file exists in the script directory or an 'assets' folder.")
+        st.error("Error: **ROBO.png** file not found. Game cannot load.")
         return
 
-    # --- FULL JAVASCRIPT GAME CODE ---
     js_game_code = f"""
     (function() {{
       if (window.__waterbuddyGameStarted) return;
@@ -597,17 +595,27 @@ def view_runner_game():
             const falling = player.velocityY >= 0;
             const playerFeetY = player.y + player.height;
             const obsTopY = obs.y;
+            const playerHeadY = player.y;
 
+            // Landing on top
             if (falling && playerFeetY <= obsTopY + 10) {{
               player.y = obsTopY - player.height; 
               player.velocityY = 0;
               player.onGround = true;
               if (player.y > groundY) player.y = groundY;
               continue;
-            }} else {{
-              endGame();
-              break;
             }}
+
+            // Head bump: cancel upward motion, no death
+            if (playerHeadY <= obsTopY && !falling) {{
+              player.y = obsTopY + 1;
+              player.velocityY = 0;
+              continue;
+            }}
+
+            // Side collision = death
+            endGame();
+            break;
           }}
           
           if (obs.x < -100) obstacles.splice(i, 1);
@@ -690,7 +698,6 @@ def view_runner_game():
     """
     
     components.html(html_content, height=600)
-
 
 # --------------------------------------------------
 # Dashboard / Main App View
