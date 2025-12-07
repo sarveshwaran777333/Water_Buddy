@@ -478,7 +478,7 @@ def view_runner_game():
     st.write("Press **SPACE** to jump and collect water droplets (blue circles).")
     st.markdown("---")
     
-    # --- Image Loading ---
+    # --- Image Loading (simplified nesting) ---
     try:
         try:
             with open("assets/ROBO.png", "rb") as f:
@@ -486,7 +486,6 @@ def view_runner_game():
         except FileNotFoundError:
             with open("ROBO.png", "rb") as f:
                 robo_data = f.read()
-                
         robo_base64 = base64.b64encode(robo_data).decode()
         robo_url = f"data:image/png;base64,{robo_base64}"
     except FileNotFoundError:
@@ -495,72 +494,90 @@ def view_runner_game():
 
     # --- FULL JAVASCRIPT GAME CODE ---
     js_game_code = f"""
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+    (function() {{
+      if (window.__waterbuddyGameStarted) return;
+      window.__waterbuddyGameStarted = true;
 
-    let playerImg = new Image();
-    playerImg.src = "{robo_url}";
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
 
-    // Physics settings: Reduced gravity and jumpPower to eliminate 'tunneling'.
-    let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 0.4, jumpPower: -12, onGround: true }};
-    
-    let obstacles = [];
-    let droplets = [];
-    let speed = 6;
-    let score = 0;
-    let frame = 0;
+      let playerImg = new Image();
+      playerImg.src = "{robo_url}";
 
-    // --- INPUT HANDLER (Spacebar Fix) ---
-    document.addEventListener("keydown", function(e) {{
+      const groundY = 350;
+      let player = {{ x: 150, y: groundY, width: 120, height: 140, velocityY: 0, gravity: 0.4, jumpPower: -12, onGround: true }};
+      
+      let obstacles = [];
+      let droplets = [];
+      let speed = 6;
+      let score = 0;
+      let frame = 0;
+      let gameOver = false;
+
+      document.addEventListener("keydown", function(e) {{
         if (e.code === "Space") {{
-            e.preventDefault(); 
-            if (player.onGround) {{
-                player.velocityY = player.jumpPower;
-                player.onGround = false;
-            }}
+          e.preventDefault(); 
+          if (!gameOver && player.onGround) {{
+            player.velocityY = player.jumpPower;
+            player.onGround = false;
+          }}
         }}
-    }});
+        if (e.code === "KeyR" && gameOver) {{
+          restart();
+        }}
+      }});
 
-    function spawnObstacle() {{
-        // FIX APPLIED: Y-position changed from 380 to 430 to align obstacle bottom (430+60=490) with robot's feet (350+140=490)
+      function spawnObstacle() {{
         obstacles.push({{ type: "block", x: canvas.width + 50, y: 430, width: 60, height: 60 }});
-    }}
+      }}
 
-    function spawnDroplet() {{
+      function spawnDroplet() {{
         droplets.push({{ x: canvas.width + 50, y: Math.random() * 200 + 150, width: 30, height: 40 }});
-    }}
+      }}
 
-    function drawPlayer() {{
+      function drawPlayer() {{
         ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
-    }}
+      }}
 
-    function drawObstacle(obs) {{
+      function drawObstacle(obs) {{
         ctx.fillStyle = "#666";
         ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-    }}
+      }}
 
-    function drawDroplet(drop) {{
+      function drawDroplet(drop) {{
         ctx.fillStyle = "#00aaff";
         ctx.beginPath();
         ctx.ellipse(drop.x + 15, drop.y + 20, 15, 20, 0, 0, Math.PI * 2);
         ctx.fill();
-    }}
+      }}
 
-    function gameLoop() {{
+      function aabb(ax, ay, aw, ah, bx, by, bw, bh) {{
+        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+      }}
+
+      function playerCollisionBox() {{
+        const insetX = 20, insetY = 20;
+        return {{
+          x: player.x + insetX,
+          y: player.y + insetY,
+          w: player.width - insetX * 2,
+          h: player.height - insetY * 2
+        }};
+      }}
+
+      function gameLoop() {{
+        if (gameOver) return;
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Player physics
         player.velocityY += player.gravity; 
         player.y += player.velocityY;
-        
-        let wasOnGround = player.onGround;
         player.onGround = false; 
 
-        // Check for landing on the ground (base floor)
-        if (player.y >= 350) {{ 
-            player.y = 350; 
-            player.velocityY = 0; 
-            player.onGround = true; 
+        if (player.y >= groundY) {{ 
+          player.y = groundY; 
+          player.velocityY = 0; 
+          player.onGround = true; 
         }}
 
         drawPlayer();
@@ -568,80 +585,92 @@ def view_runner_game():
         if (frame % 70 === 0) spawnObstacle();
         if (frame % 50 === 0) spawnDroplet();
 
-        // Obstacle processing with PRECISION HITBOX and PLATFORM LOGIC
         for (let i = obstacles.length - 1; i >= 0; i--) {{
-            let obs = obstacles[i];
-            obs.x -= speed;
-            drawObstacle(obs);
-            
-            // --- Define Virtual Hitbox ---
-            let hitbox_width = 90;
-            let hitbox_height = 40;
-            let hitbox_x = player.x + (player.width - hitbox_width); 
-            let hitbox_y = player.y + (player.height - hitbox_height); 
-            
-            // --- Full AABB Collision Check ---
-            let is_overlapping = (
-                hitbox_x < obs.x + obs.width && 
-                hitbox_x + hitbox_width > obs.x && 
-                hitbox_y < obs.y + obs.height && 
-                hitbox_y + hitbox_height > obs.y 
-            );
+          let obs = obstacles[i];
+          obs.x -= speed;
+          drawObstacle(obs);
+          
+          const pcb = playerCollisionBox();
+          const overlapping = aabb(pcb.x, pcb.y, pcb.w, pcb.h, obs.x, obs.y, obs.width, obs.height);
 
-            if (is_overlapping) {{
-                // 1. Check for TOP-SIDE COLLISION (Landing/Climbing)
-                if (player.velocityY >= 0) {{ 
-                    // Set player precisely on the platform
-                    player.y = obs.y - hitbox_height; 
-                    player.velocityY = 0;
-                    player.onGround = true;
-                    
-                    if (player.y >= 350) player.y = 350; 
-                    
-                    continue; 
-                }}
-                
-                // 2. Check for DEATH 
-                alert("Game Over! Final Score: " + score);
-                document.location.reload(); 
+          if (overlapping) {{
+            const falling = player.velocityY >= 0;
+            const playerFeetY = player.y + player.height;
+            const obsTopY = obs.y;
+
+            if (falling && playerFeetY <= obsTopY + 10) {{
+              player.y = obsTopY - player.height; 
+              player.velocityY = 0;
+              player.onGround = true;
+              if (player.y > groundY) player.y = groundY;
+              continue;
+            }} else {{
+              endGame();
+              break;
             }}
-            
-            if (obs.x < -100) obstacles.splice(i, 1);
+          }}
+          
+          if (obs.x < -100) obstacles.splice(i, 1);
         }}
 
-        // Droplet processing (uses the full bounding box for easier collection)
         for (let i = droplets.length - 1; i >= 0; i--) {{
-            let drop = droplets[i];
-            drop.x -= speed;
-            drawDroplet(drop);
-            // Basic AABB check for collectibles
-            if (player.x < drop.x + drop.width && 
-                player.x + player.width > drop.x &&
-                player.y < drop.y + drop.height && 
-                player.y + player.height > drop.y) {{
-                score += 10;
-                droplets.splice(i, 1);
-            }}
-            if (drop.x < -50) droplets.splice(i, 1);
+          let drop = droplets[i];
+          drop.x -= speed;
+          drawDroplet(drop);
+
+          const pcb = playerCollisionBox();
+          if (aabb(pcb.x, pcb.y, pcb.w, pcb.h, drop.x, drop.y, drop.width, drop.height)) {{
+            score += 10;
+            droplets.splice(i, 1);
+          }} else if (drop.x < -50) {{
+            droplets.splice(i, 1);
+          }}
         }}
 
         ctx.fillStyle = "#000";
         ctx.font = "28px Arial";
         ctx.fillText("Score: " + score, 30, 40);
 
-        // Difficulty scaling
         speed += 0.002;
         frame++;
 
         requestAnimationFrame(gameLoop);
-    }}
+      }}
 
-    playerImg.onload = gameLoop;
-    
-    document.getElementById('gameCanvas').focus();
+      function endGame() {{
+        gameOver = true;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "32px Arial";
+        ctx.fillText("Game Over! Final Score: " + score, canvas.width/2 - 200, canvas.height/2 - 20);
+        ctx.font = "20px Arial";
+        ctx.fillText("Press R to restart", canvas.width/2 - 90, canvas.height/2 + 20);
+      }}
+
+      function restart() {{
+        obstacles = [];
+        droplets = [];
+        speed = 6;
+        score = 0;
+        frame = 0;
+        player.x = 150;
+        player.y = groundY;
+        player.velocityY = 0;
+        player.onGround = true;
+        gameOver = false;
+        requestAnimationFrame(gameLoop);
+      }}
+
+      playerImg.onload = function() {{
+        requestAnimationFrame(gameLoop);
+        setTimeout(() => {{
+          document.getElementById('gameCanvas').focus();
+        }}, 0);
+      }};
+    }})();
     """
 
-    # --- HTML and Components ---
     html_content = f"""
     <style>
     canvas {{
@@ -657,12 +686,10 @@ def view_runner_game():
     </style>
 
     <canvas id="gameCanvas" width="900" height="500" tabindex="0"></canvas>
-
     <script>{js_game_code}</script>
     """
     
     components.html(html_content, height=600)
-
 
 
 # --------------------------------------------------
