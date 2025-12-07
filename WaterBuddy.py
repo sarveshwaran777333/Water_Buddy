@@ -471,13 +471,14 @@ def view_settings(uid, profile):
             st.error("Failed to save settings.")
 
 # --------------------------------------------------
-# UI: 2D Runner Game
+# UI: 2D Runner
 # --------------------------------------------------
 def view_runner_game():
     st.header("WaterBuddy Runner Game 🤖💧")
     st.write("Press **SPACE** to jump and collect water droplets (blue circles). Requires a file named `ROBO.png` in an `assets` folder or the script directory.")
     st.markdown("---")
     
+    # ... (Image loading code is correct and omitted for brevity) ...
     try:
         # Tries assets folder first, then local directory
         try:
@@ -509,11 +510,14 @@ def view_runner_game():
     let frame = 0;
 
     document.addEventListener("keydown", function(e) {{
+        // The jump logic is correct: checks for Spacebar and player being on the ground
         if (e.code === "Space" && player.onGround) {{
             player.velocityY = player.jumpPower;
             player.onGround = false;
         }}
     }});
+    
+    // ... (All other functions: spawnObstacle, spawnDroplet, drawPlayer, etc. remain here) ...
 
     function spawnObstacle() {{
         // Simple Block obstacle
@@ -567,6 +571,7 @@ def view_runner_game():
             drawObstacle(obs);
             if (collision(player, obs)) {{
                 alert("Game Over! Final Score: " + score);
+                // Instead of location.reload(), you might want a custom reset function
                 document.location.reload(); 
             }}
             if (obs.x < -100) obstacles.splice(i, 1);
@@ -596,6 +601,10 @@ def view_runner_game():
 
     // Ensure image is loaded before starting the loop
     playerImg.onload = gameLoop;
+    
+    // <<< ADDED FOCUS FIX HERE >>>
+    // Explicitly set focus to the canvas element when the component finishes loading
+    document.getElementById('gameCanvas').focus();
     </script>
     """
 
@@ -610,12 +619,11 @@ def view_runner_game():
     }}
     </style>
 
-    <canvas id="gameCanvas" width="900" height="500"></canvas>
+    <canvas id="gameCanvas" width="900" height="500" tabindex="0"></canvas>
 
     <script>{js_game_code}</script>
     """
     components.html(html_content, height=600)
-
 
 # --------------------------------------------------
 # Dashboard / Main App View
