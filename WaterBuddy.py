@@ -503,8 +503,7 @@ def view_runner_game():
     let playerImg = new Image();
     playerImg.src = "{robo_url}";
 
-    // Physics adjusted for a better, wider jump arc:
-    // gravity: 0.7 (was 1), jumpPower: -15 (was -18)
+    // Adjusted physics: Lower gravity and jump power for a longer, smoother arc.
     let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 0.7, jumpPower: -15, onGround: true }};
     
     let obstacles = [];
@@ -514,11 +513,9 @@ def view_runner_game():
     let frame = 0;
 
     // --- INPUT HANDLER (Spacebar Fix) ---
-    // Event listener attached to the whole document inside the component iframe
     document.addEventListener("keydown", function(e) {{
-        // e.preventDefault() is often required to stop the spacebar from scrolling the page
         if (e.code === "Space") {{
-            e.preventDefault(); 
+            e.preventDefault(); // Prevents the browser from scrolling
             if (player.onGround) {{
                 player.velocityY = player.jumpPower;
                 player.onGround = false;
@@ -552,10 +549,8 @@ def view_runner_game():
         ctx.fill();
     }}
 
-    function collision(a, b) {{
-        return a.x < b.x + b.width && a.x + a.width > b.x &&
-               a.y < b.y + b.height && a.y + a.height > b.y;
-    }}
+    // Note: The general AABB function is no longer called, but the logic 
+    // is manually applied in gameLoop for precision.
 
     function gameLoop() {{
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -571,15 +566,33 @@ def view_runner_game():
         if (frame % 70 === 0) spawnObstacle();
         if (frame % 50 === 0) spawnDroplet();
 
-        // Obstacle processing
+        // Obstacle processing with REFINED COLLISION
         for (let i = obstacles.length - 1; i >= 0; i--) {{
             let obs = obstacles[i];
             obs.x -= speed;
             drawObstacle(obs);
-            if (collision(player, obs)) {{
+            
+            // 1. Vertical Check: Robot's bottom must be below obstacle's top (i.e., they are vertically aligned for a hit)
+            let is_vertical_overlap = player.y + player.height > obs.y;
+            
+            // 2. Horizontal Check (Forward Hit Only): 
+            // - Robot's front must pass obstacle's front edge (obs.x)
+            // - Robot's back must not have passed the obstacle's back edge (obs.x + obs.width)
+            let is_horizontal_overlap_forward_only = 
+                player.x + player.width > obs.x && 
+                player.x < obs.x + obs.width; 
+
+            // Add a small buffer to the player's front side to make it feel like a clean hit
+            let front_hit_buffer = 15; // 15 pixels from the front edge of the robot
+            let is_clean_front_hit = player.x + player.width - front_hit_buffer > obs.x && player.x + player.width < obs.x + obs.width;
+
+
+            if (is_horizontal_overlap_forward_only && is_vertical_overlap) {{
+                // Trigger game over only if the collision is detected
                 alert("Game Over! Final Score: " + score);
                 document.location.reload(); 
             }}
+            
             if (obs.x < -100) obstacles.splice(i, 1);
         }}
 
@@ -588,7 +601,10 @@ def view_runner_game():
             let drop = droplets[i];
             drop.x -= speed;
             drawDroplet(drop);
-            if (collision(player, drop)) {{
+            if (player.x < drop.x + drop.width && 
+                player.x + player.width > drop.x &&
+                player.y < drop.y + drop.height && 
+                player.y + player.height > drop.y) {{
                 score += 10;
                 droplets.splice(i, 1); // Remove droplet on collection
             }}
@@ -611,14 +627,12 @@ def view_runner_game():
     playerImg.onload = gameLoop;
     
     // --- FOCUS FIX ---
-    // Force focus to the canvas to ensure keydown events are captured (Crucial fix)
     document.getElementById('gameCanvas').focus();
     """
 
     # --- HTML and Components ---
     html_content = f"""
     <style>
-    /* Styling the canvas */
     canvas {{
         background: linear-gradient(#ffefd5, #ffd5c8);
         display: block;
@@ -626,7 +640,6 @@ def view_runner_game():
         border-radius: 10px;
         border: 2px solid #333;
     }}
-    /* Optional: Visual cue when focused */
     #gameCanvas:focus {{
         outline: 3px solid #5dade2; 
     }}
