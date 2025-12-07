@@ -473,16 +473,12 @@ def view_settings(uid, profile):
 # --------------------------------------------------
 # UI: 2D Runner
 # --------------------------------------------------
-import streamlit as st
-import streamlit.components.v1 as components
-import base64
-
 def view_runner_game():
     st.header("WaterBuddy Runner Game 🤖💧")
-    st.write("Press **SPACE** to jump and collect water droplets (blue circles). You can now **land on top** of the obstacles!")
+    st.write("Press **SPACE** to jump and collect water droplets (blue circles).")
     st.markdown("---")
     
-    # --- Image Loading (Encodes ROBO.png to Base64 for the HTML component) ---
+    # --- Image Loading ---
     try:
         try:
             with open("assets/ROBO.png", "rb") as f:
@@ -505,8 +501,8 @@ def view_runner_game():
     let playerImg = new Image();
     playerImg.src = "{robo_url}";
 
-    // Adjusted physics: Lower gravity and jump power for a longer, smoother arc.
-    let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 0.7, jumpPower: -15, onGround: true }};
+    // Physics settings: Reduced gravity and jumpPower to eliminate 'tunneling'.
+    let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 0.4, jumpPower: -12, onGround: true }};
     
     let obstacles = [];
     let droplets = [];
@@ -517,7 +513,7 @@ def view_runner_game():
     // --- INPUT HANDLER (Spacebar Fix) ---
     document.addEventListener("keydown", function(e) {{
         if (e.code === "Space") {{
-            e.preventDefault(); // Prevents the browser from scrolling
+            e.preventDefault(); 
             if (player.onGround) {{
                 player.velocityY = player.jumpPower;
                 player.onGround = false;
@@ -526,7 +522,8 @@ def view_runner_game():
     }});
 
     function spawnObstacle() {{
-        obstacles.push({{ type: "block", x: canvas.width + 50, y: 380, width: 60, height: 60 }});
+        // FIX APPLIED: Y-position changed from 380 to 430 to align obstacle bottom (430+60=490) with robot's feet (350+140=490)
+        obstacles.push({{ type: "block", x: canvas.width + 50, y: 430, width: 60, height: 60 }});
     }}
 
     function spawnDroplet() {{
@@ -556,7 +553,6 @@ def view_runner_game():
         player.velocityY += player.gravity; 
         player.y += player.velocityY;
         
-        // Always reset onGround status unless proven otherwise by collision checks
         let wasOnGround = player.onGround;
         player.onGround = false; 
 
@@ -578,7 +574,7 @@ def view_runner_game():
             obs.x -= speed;
             drawObstacle(obs);
             
-            // --- Define Virtual Hitbox (Lower Front Section for precise contact) ---
+            // --- Define Virtual Hitbox ---
             let hitbox_width = 90;
             let hitbox_height = 40;
             let hitbox_x = player.x + (player.width - hitbox_width); 
@@ -594,27 +590,21 @@ def view_runner_game():
 
             if (is_overlapping) {{
                 // 1. Check for TOP-SIDE COLLISION (Landing/Climbing)
-                // If the player is falling (velocityY >= 0) and overlaps, snap to the top.
                 if (player.velocityY >= 0) {{ 
                     // Set player precisely on the platform
                     player.y = obs.y - hitbox_height; 
                     player.velocityY = 0;
                     player.onGround = true;
                     
-                    // Safety clamp: If platform is below base floor, set to base floor
                     if (player.y >= 350) player.y = 350; 
                     
-                    continue; // Successfully landed, skip death check.
+                    continue; 
                 }}
                 
-                // 2. Check for DEATH (Side/Bottom-Up/Head Collision)
-                // If collision happens and it wasn't a landing, it's a death.
+                // 2. Check for DEATH 
                 alert("Game Over! Final Score: " + score);
                 document.location.reload(); 
             }}
-            
-            // Fall-Off Logic: If the robot was standing on the base platform (y=350) but now it's not on the ground 
-            // and no obstacle is below it, it will fall thanks to 'player.onGround = false;' at the start of gameLoop.
             
             if (obs.x < -100) obstacles.splice(i, 1);
         }}
@@ -648,7 +638,6 @@ def view_runner_game():
 
     playerImg.onload = gameLoop;
     
-    // --- FOCUS FIX ---
     document.getElementById('gameCanvas').focus();
     """
 
@@ -674,7 +663,8 @@ def view_runner_game():
     
     components.html(html_content, height=600)
 
-    
+
+
 # --------------------------------------------------
 # Dashboard / Main App View
 # --------------------------------------------------
