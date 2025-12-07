@@ -248,52 +248,65 @@ def render_bottle(percent: float):
 # Banner
 # --------------------------------------------------
 def congratulations_banner():
-    """Renders an animating congratulatory banner at the bottom of the screen."""
-    
-    # CSS for the sliding banner animation
-    banner_css = """
+    html_code = """
+    <div class="container">
+        <div class="banner">🎉 Congratulations! Goal Achieved! 🎉</div>
+
+        <!-- Balloons -->
+        <div class="balloon" style="left: 10%; background: #ff6f61;"></div>
+        <div class="balloon" style="left: 30%; background: #6fcf97;"></div>
+        <div class="balloon" style="left: 50%; background: #56ccf2;"></div>
+        <div class="balloon" style="left: 70%; background: #f2c94c;"></div>
+        <div class="balloon" style="left: 90%; background: #bb6bd9;"></div>
+    </div>
+
     <style>
-    @keyframes slideInUp {
-      0% {
-        transform: translateY(100%);
-        opacity: 0;
-      }
-      100% {
-        transform: translateY(0);
-        opacity: 1;
-      }
+    .container {
+        position: relative;
+        height: 300px;
+        overflow: hidden;
     }
 
-    .congrats-banner {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      background-color: #2ecc71; /* Success color */
-      color: white;
-      text-align: center;
-      padding: 15px;
-      z-index: 1000; /* Ensure it's on top */
-      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
-      animation: slideInUp 0.8s ease-out forwards;
-      font-size: 24px;
-      font-weight: bold;
-      border-top-left-radius: 10px;
-      border-top-right-radius: 10px;
+    .banner {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 15px 40px;
+        background: #ffcc00;
+        color: black;
+        font-size: 28px;
+        font-weight: bold;
+        border-radius: 15px;
+        animation: float 3s ease-in-out infinite;
+        box-shadow: 0px 5px 15px rgba(0,0,0,0.3);
+    }
+
+    @keyframes float {
+        0% { transform: translate(-50%, 0px); }
+        50% { transform: translate(-50%, -15px); }
+        100% { transform: translate(-50%, 0px); }
+    }
+
+    .balloon {
+        position: absolute;
+        bottom: -120px;
+        width: 50px;
+        height: 70px;
+        border-radius: 50px 50px 35px 35px;
+        animation: rise 6s infinite ease-in;
+        opacity: 0.85;
+    }
+
+    @keyframes rise {
+        0% { bottom: -120px; transform: translateX(0) rotate(0deg); }
+        50% { transform: translateX(-20px) rotate(10deg); }
+        100% { bottom: 350px; transform: translateX(20px) rotate(-10deg); }
     }
     </style>
     """
-    st.markdown(banner_css, unsafe_allow_html=True)
 
-    # HTML for the banner content
-    banner_html = """
-    <div class="congrats-banner">
-        🎉 CONGRATULATIONS! You hit your daily water goal! 🎉
-    </div>
-    """
-    
-    with st.container():
-        st.markdown(banner_html, unsafe_allow_html=True)
+    st.components.v1.html(html_code, height=350)
 
 
 # --------------------------------------------------
