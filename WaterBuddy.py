@@ -249,65 +249,137 @@ def render_bottle(percent: float):
 # --------------------------------------------------
 def congratulations_banner():
     html_code = """
-    <div class="container">
-        <div class="banner">🎉 Congratulations! Goal Achieved! 🎉</div>
+    <div class="cb-container" aria-hidden="true">
+      <div class="cb-banner">🎉 Congratulations! Goal Achieved! 🎉</div>
 
-        <!-- Balloons -->
-        <div class="balloon" style="left: 10%; background: #ff6f61;"></div>
-        <div class="balloon" style="left: 30%; background: #6fcf97;"></div>
-        <div class="balloon" style="left: 50%; background: #56ccf2;"></div>
-        <div class="balloon" style="left: 70%; background: #f2c94c;"></div>
-        <div class="balloon" style="left: 90%; background: #bb6bd9;"></div>
+      <!-- Balloons with per-item CSS variables for left position, duration and delay -->
+      <div class="balloon" style="left:6%; --dur:7s; --delay:0s; background:#ff6f61;"></div>
+      <div class="balloon" style="left:20%; --dur:6.2s; --delay:0.4s; background:#6fcf97;"></div>
+      <div class="balloon" style="left:34%; --dur:8s; --delay:0.6s; background:#56ccf2;"></div>
+      <div class="balloon" style="left:48%; --dur:6.8s; --delay:0.2s; background:#f2c94c;"></div>
+      <div class="balloon" style="left:62%; --dur:7.5s; --delay:0.8s; background:#bb6bd9;"></div>
+      <div class="balloon" style="left:76%; --dur:6.4s; --delay:0.3s; background:#ff9f43;"></div>
+      <div class="balloon" style="left:88%; --dur:7.8s; --delay:0.5s; background:#7bd389;"></div>
     </div>
 
     <style>
-    .container {
-        position: relative;
-        height: 300px;
-        overflow: hidden;
+    .cb-container {
+      position: relative;
+      height: 340px;
+      overflow: hidden;
+      pointer-events: none;
     }
 
-    .banner {
-        position: absolute;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 15px 40px;
-        background: #ffcc00;
-        color: black;
-        font-size: 28px;
-        font-weight: bold;
-        border-radius: 15px;
-        animation: float 3s ease-in-out infinite;
-        box-shadow: 0px 5px 15px rgba(0,0,0,0.3);
+    /* Banner */
+    .cb-banner {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 32px;
+      background: linear-gradient(90deg,#ffdd57,#ffb84d);
+      color: #1b1b1b;
+      font-size: 24px;
+      font-weight: 700;
+      border-radius: 14px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+      animation: cb-float 3s ease-in-out infinite;
+      z-index: 5;
+    }
+    @keyframes cb-float {
+      0% { transform: translateX(-50%) translateY(0); }
+      50% { transform: translateX(-50%) translateY(-12px); }
+      100% { transform: translateX(-50%) translateY(0); }
     }
 
-    @keyframes float {
-        0% { transform: translate(-50%, 0px); }
-        50% { transform: translate(-50%, -15px); }
-        100% { transform: translate(-50%, 0px); }
-    }
-
+    /* Balloon base */
     .balloon {
-        position: absolute;
-        bottom: -120px;
-        width: 50px;
-        height: 70px;
-        border-radius: 50px 50px 35px 35px;
-        animation: rise 6s infinite ease-in;
-        opacity: 0.85;
+      --start-bottom: -140px; /* start below container */
+      position: absolute;
+      bottom: var(--start-bottom);
+      width: 56px;
+      height: 76px;
+      border-radius: 52% 52% 46% 46% / 60% 60% 40% 40%;
+      box-shadow: inset -8px -12px 18px rgba(255,255,255,0.15), 0 6px 18px rgba(0,0,0,0.12);
+      transform-origin: center bottom;
+      animation: rise var(--dur,7s) cubic-bezier(.2,.8,.2,1) var(--delay,0s) both;
+      opacity: 0.95;
     }
 
-    @keyframes rise {
-        0% { bottom: -120px; transform: translateX(0) rotate(0deg); }
-        50% { transform: translateX(-20px) rotate(10deg); }
-        100% { bottom: 350px; transform: translateX(20px) rotate(-10deg); }
+    /* Knot (small triangle/circle) */
+    .balloon::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: -8px;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: rgba(0,0,0,0.06);
+      box-shadow: 0 2px 0 rgba(0,0,0,0.06) inset;
+      z-index: 3;
     }
+
+    /* String: thin, slightly wavy */
+    .balloon::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: -8px;
+      width: 2px;
+      height: 160px;
+      border-radius: 1px;
+      background: linear-gradient(#555 0%, #aaa 100%);
+      filter: drop-shadow(0 1px 0 rgba(0,0,0,0.08));
+      z-index: 2;
+      /* subtle wiggle using animation */
+      animation: string-wiggle var(--dur,7s) ease-in-out var(--delay,0s) both;
+    }
+
+    @keyframes string-wiggle {
+      0% { transform: translateX(-50%) rotate(0deg); }
+      25% { transform: translateX(calc(-50% + 6px)) rotate(2deg); }
+      50% { transform: translateX(-50%) rotate(0deg); }
+      75% { transform: translateX(calc(-50% - 6px)) rotate(-2deg); }
+      100% { transform: translateX(-50%) rotate(0deg); }
+    }
+
+    /* Rise animation: vertical movement + slight horizontal drift + rotation */
+    @keyframes rise {
+      0% {
+        bottom: var(--start-bottom);
+        transform: translateX(0) rotate(0deg) scale(0.95);
+        opacity: 0;
+      }
+      10% {
+        opacity: 1;
+      }
+      50% {
+        transform: translateX(calc(var(--drift, -20px))) rotate(6deg) scale(1.02);
+      }
+      100% {
+        bottom: 420px;
+        transform: translateX(calc(var(--drift, 20px))) rotate(-6deg) scale(1);
+        opacity: 0.98;
+      }
+    }
+
+    /* Make balloons appear at different horizontal drift amounts */
+    .balloon:nth-child(2) { --drift: -28px; }
+    .balloon:nth-child(3) { --drift: 18px; }
+    .balloon:nth-child(4) { --drift: -12px; }
+    .balloon:nth-child(5) { --drift: 24px; }
+    .balloon:nth-child(6) { --drift: -18px; }
+    .balloon:nth-child(7) { --drift: 10px; }
+
+    /* Accessibility: hide from assistive tech when decorative */
+    .cb-container[aria-hidden="true"] { aria-hidden: true; }
     </style>
     """
 
-    st.components.v1.html(html_code, height=350)
-
+    components.html(html_code, height=360)
 
 # --------------------------------------------------
 # Graphing
