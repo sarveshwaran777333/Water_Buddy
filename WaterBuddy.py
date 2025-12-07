@@ -1,16 +1,21 @@
 # WaterBuddy.py
 """
-WaterBuddy - Streamlit app combining all features:
-1. Secure Password Hashing (using hashlib).
-2. Theme Persistence (saves choice to profile).
-3. Robust Data Handling (Fixed NameError and safer Firebase access).
-4. 7-Day History Trend (Line Chart, Matplotlib).
-5. 7-Day History Comparison (Bar Chart, Matplotlib).
+WaterBuddy - Complete Streamlit app.
+Features included:
+1. User Authentication (Login/Signup with Hashing).
+2. Daily Water Intake Tracking and Firebase Persistence.
+3. Custom Theming with Persistence.
+4. History Charts (Matplotlib).
+5. CSS Fix for navigation button text color.
+6. Animated Congratulations Banner on goal completion.
+7. Simple 2D Runner Game component (requires 'robo.png').
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import json
+import base64
 from datetime import date, timedelta, datetime
 import random
 import time
@@ -37,6 +42,8 @@ AGE_GOALS_ML = {
     "19-50": 2500,
     "65+": 2000,
 }
+# Default goal can be overridden by user input in settings
+DEFAULT_GOAL_ML = AGE_GOALS_ML["19-50"]
 
 DEFAULT_QUICK_LOG_ML = 250
 CUPS_TO_ML = 236.588
@@ -131,7 +138,7 @@ def create_user(username: str, password: str):
         "created_at": DATE_STR,
         "profile": {
             "age_group": "19-50",
-            "user_goal_ml": AGE_GOALS_ML["19-50"],
+            "user_goal_ml": DEFAULT_GOAL_ML,
             "theme": "Light"
         }
     }
@@ -174,17 +181,17 @@ def reset_today_intake(uid: str):
 
 def get_user_profile(uid: str):
     if not uid:
-        return {"age_group": "19-50", "user_goal_ml": AGE_GOALS_ML["19-50"], "theme": "Light"}
+        return {"age_group": "19-50", "user_goal_ml": DEFAULT_GOAL_ML, "theme": "Light"}
     profile = firebase_get(f"{USERS_NODE}/{uid}/profile")
     if isinstance(profile, dict):
-        user_goal = profile.get("user_goal_ml", AGE_GOALS_ML["19-50"])
+        user_goal = profile.get("user_goal_ml", DEFAULT_GOAL_ML)
         try:
             user_goal = int(user_goal)
         except Exception:
-            user_goal = AGE_GOALS_ML["19-50"]
+            user_goal = DEFAULT_GOAL_ML
         theme = profile.get("theme", "Light")
         return {"age_group": profile.get("age_group", "19-50"), "user_goal_ml": user_goal, "theme": theme}
-    return {"age_group": "19-50", "user_goal_ml": AGE_GOALS_ML["19-50"], "theme": "Light"}
+    return {"age_group": "19-50", "user_goal_ml": DEFAULT_GOAL_ML, "theme": "Light"}
 
 def update_user_profile(uid: str, updates: dict):
     if not uid:
@@ -215,7 +222,7 @@ def get_past_intake(uid: str, days_count: int = 7):
     return {day: intake_data[day] for day in sorted_days}
 
 # -----------------------
-# UI helpers (SVG & Matplotlib)
+# UI helpers (SVG, Matplotlib, and Banner)
 # -----------------------
 def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
     """Simple bottle SVG with dynamic fill height."""
@@ -236,7 +243,6 @@ def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
 """
     return svg
 
-# RENAME: Existing Line Chart (Trend)
 def plot_daily_intake_trend(intake_data: dict, goal: int):
     """Generate a Matplotlib line chart showing daily water intake trend."""
     sorted_days = list(intake_data.keys())
@@ -256,49 +262,37 @@ def plot_daily_intake_trend(intake_data: dict, goal: int):
     fig.set_tight_layout(True)
     return fig
 
-# NEW FUNCTION: Weekly Bar Chart (Comparison)
 def plot_weekly_bar_chart(intake_data: dict, goal: int):
     """Generate a Matplotlib bar chart showing the last 7 days' intake for comparison."""
     if not intake_data:
-        # Return a warning figure if no data is present
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.text(0.5, 0.5, 'No data available for the bar chart.', ha='center', va='center', transform=ax.transAxes)
         ax.axis('off')
         fig.set_tight_layout(True)
         return fig
 
-    # intake_data is already sorted oldest to newest
     days = list(intake_data.keys())
     intakes = list(intake_data.values())
     
-    # Format labels to be short days of the week (Mon, Tue, etc.)
     day_labels = []
     for d_str in days:
-        # Use datetime.fromisoformat for robust conversion
         d_obj = date.fromisoformat(d_str) 
         day_labels.append(d_obj.strftime("%a")) 
     
     fig, ax = plt.subplots(figsize=(10, 4))
     
-    # Use bar chart for weekly comparison
     bars = ax.bar(day_labels, intakes, color='#67b3df', edgecolor='#3498db')
-    
-    # Add goal line 
     ax.axhline(y=goal, color='#2ecc71', linestyle='--', label=f'Goal ({goal} ml)')
 
-    # Add intake values on top of bars
     for bar in bars:
         yval = bar.get_height()
-        # Only label non-zero bars
         if yval > 0:
             ax.text(bar.get_x() + bar.get_width()/2, yval + max(20, goal * 0.02), 
                     f'{yval}', ha='center', va='bottom', fontsize=9)
 
-    # Customize the plot
     ax.set_title("Water Intake by Day (Last 7 Days)", fontsize=16)
     ax.set_xlabel("Day of the Week", fontsize=12)
     ax.set_ylabel("Water Intake (ml)", fontsize=12)
-    # Set y-limit to slightly above the max intake or goal for better visualization
     ax.set_ylim(0, max(max(intakes) * 1.2, goal * 1.1)) 
     ax.grid(axis='y', linestyle=':', alpha=0.7)
     ax.legend()
@@ -306,9 +300,57 @@ def plot_weekly_bar_chart(intake_data: dict, goal: int):
     
     return fig
 
+def congratulations_banner():
+    """Renders an animating congratulatory banner at the bottom of the screen."""
+    
+    # CSS for the sliding banner animation
+    banner_css = """
+    <style>
+    @keyframes slideInUp {
+      0% {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+      100% {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .congrats-banner {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background-color: #2ecc71; /* Success color */
+      color: white;
+      text-align: center;
+      padding: 15px;
+      z-index: 1000; /* Ensure it's on top */
+      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
+      animation: slideInUp 0.8s ease-out forwards;
+      font-size: 24px;
+      font-weight: bold;
+      border-top-left-radius: 10px;
+      border-top-right-radius: 10px;
+    }
+    </style>
+    """
+    st.markdown(banner_css, unsafe_allow_html=True)
+
+    # HTML for the banner content
+    banner_html = """
+    <div class="congrats-banner">
+        🎉 CONGRATULATIONS! You hit your daily water goal! 🎉
+    </div>
+    """
+    
+    with st.container():
+        st.markdown(banner_html, unsafe_allow_html=True)
+
 
 # -----------------------
-# Theme CSS (Well-implemented, kept for completeness)
+# Theme CSS (Fixed Button Text Color)
 # -----------------------
 def apply_theme(theme_name: str):
     if theme_name == "Light":
@@ -332,21 +374,39 @@ def apply_theme(theme_name: str):
 
     st.markdown(f"""
     <style>
+    /* app base */
     .stApp {{ background-color: {bg} !important; color: {text} !important; }}
+    /* all text elements */
     h1,h2,h3,h4,h5,h6,p,label,span {{ color: {text} !important; }}
+
+    /* basic controls */
     .stButton>button {{ border-radius:8px !important; }}
     .stTextInput>div>div>input {{ border-radius:6px !important; }}
+    
+    /* FIX: Ensure navigation button text color inherits the 'text' color */
+    .stButton>button>div>p {{ 
+        color: {text} !important; 
+        font-weight: 500; 
+    }}
+
+    /* metric container background */
     div[data-testid="metric-container"] {{
         background-color: {metric_bg} !important;
         border-radius: 12px !important;
         padding: 12px !important;
         border: 1px solid rgba(0,0,0,0.06) !important;
     }}
+
+    /* DEEP OVERRIDE: metric text uses metric_val */
     div[data-testid="metric-container"] * {{ color: {metric_val} !important; }}
+
+    /* delta must use delta color */
     div[data-testid="metric-container"] [data-testid="metric-delta"] *,
     div[data-testid="metric-container"] [data-testid="stMetricDelta"] * {{
         color: {metric_delta} !important;
     }}
+
+    /* additional defensive selectors for Streamlit internal variations */
     div[data-testid="stMetricValue"] * {{ color: inherit !important; }}
     div[data-testid="stMetricDelta"] * {{ color: inherit !important; }}
     div[data-testid="stVerticalBlock"] div[data-testid="metric-container"] * {{ color: {metric_val} !important; }}
@@ -361,11 +421,11 @@ def apply_theme(theme_name: str):
 # -----------------------
 def load_lottie(path: str):
     try:
-        # Check path relative to current working directory
+        # Check current directory
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        # Check assets folder path
+        # Check assets subdirectory
         assets_path = os.path.join(os.path.dirname(__file__), "assets", path)
         if os.path.exists(assets_path):
              with open(assets_path, "r", encoding="utf-8") as f:
@@ -374,13 +434,203 @@ def load_lottie(path: str):
         print(f"Error loading lottie file: {e}")
         return None
 
-# Attempt to load Lottie progress animation
 LOTTIE_PROGRESS = None
 LOTTIE_FILENAME = "progress_bar.json" 
 if st_lottie is not None:
+    # Attempt to load Lottie animation (must be in the same folder or 'assets')
     LOTTIE_PROGRESS = load_lottie(LOTTIE_FILENAME) 
     if LOTTIE_PROGRESS is None:
         LOTTIE_PROGRESS = load_lottie(os.path.join("assets", LOTTIE_FILENAME))
+
+
+# -----------------------
+# Game UI
+# -----------------------
+def game_ui(robo_path="robo.png"):
+    st.header("WaterBuddy Runner Game! 🤖💧")
+    st.write("Collect water droplets (+10 points) and avoid the obstacles (blocks/fire) by pressing the **SPACEBAR**.")
+    st.markdown("---")
+    
+    # 1. Load and encode robo.png
+    try:
+        with open(robo_path, "rb") as f:
+            robo_data = f.read()
+        robo_base64 = base64.b64encode(robo_data).decode()
+        robo_url = f"data:image/png;base64,{robo_base64}"
+    except FileNotFoundError:
+        st.error(f"Error: The image file **'{robo_path}'** was not found.")
+        st.warning("Please ensure **'robo.png'** is in the same directory as this script.")
+        return
+        
+    # 2. Complete Game HTML/CSS/JavaScript
+    game_script = f"""
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let playerImg = new Image();
+    playerImg.src = "{robo_url}";
+
+    let player = {{
+        x: 150,
+        y: 350,
+        width: 120,
+        height: 140,
+        velocityY: 0,
+        gravity: 1,
+        jumpPower: -18,
+        onGround: true,
+    }};
+
+    let obstacles = [];
+    let droplets = [];
+    let speed = 6;
+    let score = 0;
+
+    document.addEventListener("keydown", function(e) {{
+        if (e.code === "Space" && player.onGround) {{
+            player.velocityY = player.jumpPower;
+            player.onGround = false;
+        }}
+    }});
+
+    function spawnObstacle() {{
+        const type = Math.random() < 0.5 ? "block" : "flame";
+        if (type === "block") {{
+            obstacles.push({{
+                type: "block",
+                x: canvas.width + 50,
+                y: 380,
+                width: 60,
+                height: 60
+            }});
+        }} else {{
+            obstacles.push({{
+                type: "flame",
+                x: canvas.width + 50,
+                y: 360,
+                width: 50,
+                height: 70
+            }});
+        }}
+    }}
+
+    function spawnDroplet() {{
+        droplets.push({{
+            x: canvas.width + 50,
+            y: Math.random() * 200 + 150,
+            width: 30,
+            height: 40
+        }});
+    }}
+
+    function drawPlayer() {{
+        ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+    }}
+
+    function drawObstacle(obs) {{
+        if (obs.type === "block") {{
+            ctx.fillStyle = "#666";
+            ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+        }} else {{
+            ctx.fillStyle = "orange";
+            ctx.beginPath();
+            ctx.moveTo(obs.x + 25, obs.y);
+            ctx.lineTo(obs.x + obs.width, obs.y + obs.height);
+            ctx.lineTo(obs.x, obs.y + obs.height);
+            ctx.fill();
+        }}
+    }}
+
+    function drawDroplet(drop) {{
+        ctx.fillStyle = "#00aaff";
+        ctx.beginPath();
+        ctx.ellipse(drop.x + 15, drop.y + 20, 15, 20, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }}
+
+    let frame = 0;
+
+    function gameLoop() {{
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        player.velocityY += player.gravity;
+        player.y += player.velocityY;
+
+        if (player.y >= 350) {{
+            player.y = 350;
+            player.velocityY = 0;
+            player.onGround = true;
+        }}
+
+        drawPlayer();
+
+        if (frame % 70 === 0) spawnObstacle();
+        if (frame % 50 === 0) spawnDroplet();
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {{
+            let obs = obstacles[i];
+            obs.x -= speed;
+
+            drawObstacle(obs);
+
+            if (player.x < obs.x + obs.width &&
+                player.x + player.width > obs.x &&
+                player.y < obs.y + obs.height &&
+                player.y + player.height > obs.y) {{
+                alert("Game Over! Final Score: " + score);
+                document.location.reload();
+            }}
+
+            if (obs.x < -100) obstacles.splice(i, 1);
+        }}
+
+        for (let i = droplets.length - 1; i >= 0; i--) {{
+            let drop = droplets[i];
+            drop.x -= speed;
+
+            drawDroplet(drop);
+
+            if (player.x < drop.x + drop.width &&
+                player.x + player.width > drop.x &&
+                player.y < drop.y + drop.height &&
+                player.y + player.height > drop.y) {{
+                score += 10;
+                droplets.splice(i, 1);
+            }}
+
+            if (drop.x < -50) droplets.splice(i, 1);
+        }}
+
+        ctx.fillStyle = "#000";
+        ctx.font = "28px Arial";
+        ctx.fillText("Score: " + score, 30, 40);
+
+        speed += 0.002;
+        frame++;
+
+        requestAnimationFrame(gameLoop);
+    }}
+
+    gameLoop();
+    """
+
+    final_html = f"""
+    <style>
+    canvas {{
+        background: linear-gradient(#ffefd5, #ffd5c8);
+        display: block;
+        margin: 0 auto;
+        border-radius: 10px;
+    }}
+    </style>
+
+    <canvas id="gameCanvas" width="900" height="500"></canvas>
+
+    <script>{game_script}</script>
+    """
+
+    components.html(final_html, height=600)
+
 
 # -----------------------
 # Streamlit app start
@@ -407,7 +657,7 @@ apply_theme(st.session_state.theme)
 st.title("WaterBuddy — Hydration Tracker")
 
 # -----------------------
-# Login and Signup UIs (Using st.form for clean flow)
+# Login and Signup UIs
 # -----------------------
 def login_ui():
     st.header("Login (username + password)")
@@ -489,7 +739,7 @@ def dashboard_ui():
     intake = get_today_intake(uid)
     
     # Calculate core progress variables
-    std_goal = AGE_GOALS_ML.get(profile.get("age_group","19-50"), 2500)
+    std_goal = AGE_GOALS_ML.get(profile.get("age_group","19-50"), DEFAULT_GOAL_ML)
     user_goal = int(profile.get("user_goal_ml", std_goal))
     remaining = max(user_goal - intake, 0)
     percent = min((intake / user_goal) * 100 if user_goal > 0 else 0, 100)
@@ -528,6 +778,9 @@ def dashboard_ui():
             st.rerun()
         if st.button("Settings", key="nav_settings"):
             st.session_state.nav = "Settings"
+            st.rerun()
+        if st.button("Play Game 🕹️", key="nav_game"):
+            st.session_state.nav = "Game"
             st.rerun()
         if st.button("Logout", key="nav_logout"):
             st.session_state.logged_in = False
@@ -582,6 +835,8 @@ def dashboard_ui():
             # milestone messages
             if percent >= 100:
                 st.success("🎉 Amazing — you reached your daily goal!")
+                # Show the animated banner when goal is met
+                congratulations_banner()
             elif percent >= 75:
                 st.info("Great — 75% reached!")
             elif percent >= 50:
@@ -657,20 +912,20 @@ def dashboard_ui():
             st.markdown("---")
             st.subheader("Last 7 Days Bar Chart (Daily Comparison)")
             
-            # NEW CHART: Weekly Bar Chart
+            # Weekly Bar Chart
             try:
                 intake_bar_fig = plot_weekly_bar_chart(past_intake_data, user_goal)
-                st.pyplot(intake_bar_fig) # 
+                st.pyplot(intake_bar_fig)
             except Exception as e:
                 st.error(f"Could not generate bar chart. Error: {e}")
                 
             st.markdown("---")
             st.subheader("Last 7 Days Trend (Line Chart)")
             
-            # EXISTING CHART: Line Chart
+            # Line Chart
             try:
                 intake_plot_fig = plot_daily_intake_trend(past_intake_data, user_goal)  
-                st.pyplot(intake_plot_fig)  # 
+                st.pyplot(intake_plot_fig)  
             except Exception as e:
                 st.error(f"Could not generate trend graph. Error: {e}")
                 st.info("Ensure you have Matplotlib installed and some data logged.")
@@ -696,6 +951,9 @@ def dashboard_ui():
                     st.success("Profile saved. Please navigate to Home to see the update.")
                 else:
                     st.error("Failed to save profile. Check network/DB rules.")
+
+        elif nav == "Game":
+            game_ui()
 
 
 # -----------------------
