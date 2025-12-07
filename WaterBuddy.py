@@ -328,7 +328,7 @@ def view_settings(uid, profile):
 def view_runner_game():
     st.header("WaterBuddy Runner Game")
 
-    with open("robo.png", "rb") as f:
+    with open("assests/ROBO.png", "rb") as f:
         img = base64.b64encode(f.read()).decode()
 
     html = f"""
