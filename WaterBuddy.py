@@ -3,15 +3,15 @@
 WaterBuddy - Streamlit app combining all features:
 1. Secure Password Hashing (using hashlib).
 2. Theme Persistence (saves choice to profile).
-3. Fixed NameError (calculated core variables in dashboard_ui).
-4. 7-Day History Graph (using Matplotlib).
-5. **FIXES APPLIED**: Lottie path robustness, safer API timeouts, and Matplotlib figure handling.
+3. Robust Data Handling (Fixed NameError and safer Firebase access).
+4. 7-Day History Trend (Line Chart, Matplotlib).
+5. 7-Day History Comparison (Bar Chart, Matplotlib).
 """
 
 import streamlit as st
 import requests
 import json
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import random
 import time
 import os
@@ -21,7 +21,7 @@ import hashlib
 # Optional Lottie support
 try:
     from streamlit_lottie import st_lottie
-except ImportError: # Changed Exception to ImportError for cleaner handling
+except ImportError:
     st_lottie = None
 
 # -----------------------
@@ -40,7 +40,6 @@ AGE_GOALS_ML = {
 
 DEFAULT_QUICK_LOG_ML = 250
 CUPS_TO_ML = 236.588
-# INCREASED timeout for potentially slow Firebase REST API calls
 REQUEST_TIMEOUT = 10 
 
 TIPS = [
@@ -63,24 +62,22 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
 # -----------------------
-# Firebase REST helpers (Updated with better error handling)
+# Firebase REST helpers (Robust Error Handling)
 # -----------------------
 def firebase_url(path: str) -> str:
     path = path.strip("/")
     return f"{FIREBASE_URL}/{path}.json"
 
-# @st.cache_data(ttl=60) # OPTIONAL: Add caching for non-volatile data like profiles
 def firebase_get(path: str):
     url = firebase_url(path)
     try:
         r = requests.get(url, timeout=REQUEST_TIMEOUT)
-        r.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        r.raise_for_status() 
         try:
             return r.json()
         except requests.exceptions.JSONDecodeError:
-            return None # Handle case where response is 200 but body is empty/invalid JSON
+            return None
     except requests.exceptions.RequestException as e:
-        # Catch connection errors, timeouts, and HTTP errors
         print(f"Firebase GET Error on {path}: {e}")
         return None
 
@@ -90,7 +87,7 @@ def firebase_post(path: str, value):
         r = requests.post(url, data=json.dumps(value), timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
         try:
-            return r.json()  # expected {"name": "<key>"}
+            return r.json()
         except requests.exceptions.JSONDecodeError:
             return None
     except requests.exceptions.RequestException as e:
@@ -102,7 +99,7 @@ def firebase_patch(path: str, value_dict: dict):
     try:
         r = requests.patch(url, data=json.dumps(value_dict), timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
-        return True # Successful PATCH returns 200 or 204
+        return True
     except requests.exceptions.RequestException as e:
         print(f"Firebase PATCH Error on {path}: {e}")
         return False
@@ -110,8 +107,6 @@ def firebase_patch(path: str, value_dict: dict):
 # -----------------------
 # User & Intake helpers
 # -----------------------
-# ... (find_user_by_username, create_user, validate_login, etc., remain largely the same,
-# as they rely on the improved Firebase helpers)
 def find_user_by_username(username: str):
     data = firebase_get(USERS_NODE)
     if not isinstance(data, dict):
@@ -203,7 +198,7 @@ def get_username_by_uid(uid: str):
     return "user"
 
 def get_past_intake(uid: str, days_count: int = 7):
-    """Fetches intake data for the last N days (including today)."""
+    """Fetches intake data for the last N days (including today), returns sorted by date."""
     intake_data = {}
     today = date.today()
     for i in range(days_count):
@@ -212,14 +207,16 @@ def get_past_intake(uid: str, days_count: int = 7):
         intake_value = firebase_get(path)
         try:
             intake_data[day] = int(intake_value) if intake_value is not None else 0
-        except:
+        except Exception:
             intake_data[day] = 0
-    return intake_data
+    
+    # Return sorted data (oldest to newest)
+    sorted_days = sorted(intake_data.keys())
+    return {day: intake_data[day] for day in sorted_days}
 
 # -----------------------
 # UI helpers (SVG & Matplotlib)
 # -----------------------
-# ... (generate_bottle_svg remains the same)
 def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
     """Simple bottle SVG with dynamic fill height."""
     pct = max(0.0, min(100.0, float(percent)))
@@ -239,43 +236,81 @@ def generate_bottle_svg(percent: float, width:int=140, height:int=360) -> str:
 """
     return svg
 
-def plot_water_intake(intake_data: dict, goal: int):
-    """Generate a Matplotlib line chart showing daily water intake."""
-    # intake_data keys are ISO dates (YYYY-MM-DD); sort them from oldest to newest
-    sorted_days = sorted(intake_data.keys())
-    
-    # Extract values in the sorted order
+# RENAME: Existing Line Chart (Trend)
+def plot_daily_intake_trend(intake_data: dict, goal: int):
+    """Generate a Matplotlib line chart showing daily water intake trend."""
+    sorted_days = list(intake_data.keys())
     intakes = [intake_data[day] for day in sorted_days]
-    
-    # Format labels to be shorter (e.g., '12-05')
     labels = [d[5:] for d in sorted_days]
     
-    # Create the plot, ensuring the figure object is created and returned
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(labels, intakes, marker='o', color='#3498db', label="Water Intake (ml)", linewidth=2)
-    
-    # Add goal line 
     ax.axhline(y=goal, color='#2ecc71', linestyle='--', label=f'Goal ({goal} ml)')
 
-    # Customize the plot
-    ax.set_title("Daily Water Intake Over the Last 7 Days", fontsize=16)
+    ax.set_title("Daily Water Intake Trend Over the Last 7 Days", fontsize=16)
     ax.set_xlabel("Date (MM-DD)", fontsize=12)
     ax.set_ylabel("Water Intake (ml)", fontsize=12)
     ax.tick_params(axis='x', rotation=45)
     ax.grid(True, linestyle=':', alpha=0.7)
     ax.legend()
-    
-    # FIX: Use fig.set_tight_layout(True) as an alternative to plt.tight_layout() to avoid potential warnings
-    # and ensure compatibility in Streamlit environment.
     fig.set_tight_layout(True)
-
     return fig
 
+# NEW FUNCTION: Weekly Bar Chart (Comparison)
+def plot_weekly_bar_chart(intake_data: dict, goal: int):
+    """Generate a Matplotlib bar chart showing the last 7 days' intake for comparison."""
+    if not intake_data:
+        # Return a warning figure if no data is present
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.text(0.5, 0.5, 'No data available for the bar chart.', ha='center', va='center', transform=ax.transAxes)
+        ax.axis('off')
+        fig.set_tight_layout(True)
+        return fig
+
+    # intake_data is already sorted oldest to newest
+    days = list(intake_data.keys())
+    intakes = list(intake_data.values())
+    
+    # Format labels to be short days of the week (Mon, Tue, etc.)
+    day_labels = []
+    for d_str in days:
+        # Use datetime.fromisoformat for robust conversion
+        d_obj = date.fromisoformat(d_str) 
+        day_labels.append(d_obj.strftime("%a")) 
+    
+    fig, ax = plt.subplots(figsize=(10, 4))
+    
+    # Use bar chart for weekly comparison
+    bars = ax.bar(day_labels, intakes, color='#67b3df', edgecolor='#3498db')
+    
+    # Add goal line 
+    ax.axhline(y=goal, color='#2ecc71', linestyle='--', label=f'Goal ({goal} ml)')
+
+    # Add intake values on top of bars
+    for bar in bars:
+        yval = bar.get_height()
+        # Only label non-zero bars
+        if yval > 0:
+            ax.text(bar.get_x() + bar.get_width()/2, yval + max(20, goal * 0.02), 
+                    f'{yval}', ha='center', va='bottom', fontsize=9)
+
+    # Customize the plot
+    ax.set_title("Water Intake by Day (Last 7 Days)", fontsize=16)
+    ax.set_xlabel("Day of the Week", fontsize=12)
+    ax.set_ylabel("Water Intake (ml)", fontsize=12)
+    # Set y-limit to slightly above the max intake or goal for better visualization
+    ax.set_ylim(0, max(max(intakes) * 1.2, goal * 1.1)) 
+    ax.grid(axis='y', linestyle=':', alpha=0.7)
+    ax.legend()
+    fig.set_tight_layout(True)
+    
+    return fig
+
+
 # -----------------------
-# Theme CSS (remains the same as it was well-implemented)
+# Theme CSS (Well-implemented, kept for completeness)
 # -----------------------
 def apply_theme(theme_name: str):
-    # ... (CSS code is omitted for brevity but remains the same)
     if theme_name == "Light":
         metric_val = "#000000"
         metric_delta = "#006600"
@@ -297,49 +332,33 @@ def apply_theme(theme_name: str):
 
     st.markdown(f"""
     <style>
-    /* app base */
     .stApp {{ background-color: {bg} !important; color: {text} !important; }}
     h1,h2,h3,h4,h5,h6,p,label,span {{ color: {text} !important; }}
-
-    /* basic controls */
     .stButton>button {{ border-radius:8px !important; }}
     .stTextInput>div>div>input {{ border-radius:6px !important; }}
-
-    /* metric container background */
     div[data-testid="metric-container"] {{
         background-color: {metric_bg} !important;
         border-radius: 12px !important;
         padding: 12px !important;
         border: 1px solid rgba(0,0,0,0.06) !important;
     }}
-
-    /* DEEP OVERRIDE: everything inside metric container should use metric_val */
-    div[data-testid="metric-container"] * {{
-        color: {metric_val} !important;
-    }}
-
-    /* delta must use delta color */
+    div[data-testid="metric-container"] * {{ color: {metric_val} !important; }}
     div[data-testid="metric-container"] [data-testid="metric-delta"] *,
     div[data-testid="metric-container"] [data-testid="stMetricDelta"] * {{
         color: {metric_delta} !important;
     }}
-
-    /* additional defensive selectors for Streamlit internal variations */
     div[data-testid="stMetricValue"] * {{ color: inherit !important; }}
     div[data-testid="stMetricDelta"] * {{ color: inherit !important; }}
     div[data-testid="stVerticalBlock"] div[data-testid="metric-container"] * {{ color: {metric_val} !important; }}
     div[data-testid="stVerticalBlock"] div[data-testid="metric-container"] [data-testid="metric-delta"] * {{ color: {metric_delta} !important; }}
-
-    /* ensure svg text inside metric uses same color */
     div[data-testid="metric-container"] svg text {{ fill: {metric_val} !important; color: {metric_val} !important; }}
     </style>
     """, unsafe_allow_html=True)
 
 
 # -----------------------
-# Lottie helper + load animation (fixed for robustness)
+# Lottie helper + load animation
 # -----------------------
-# FIX: Adjusted path handling to be more robust for different deployment environments
 def load_lottie(path: str):
     try:
         # Check path relative to current working directory
@@ -357,11 +376,9 @@ def load_lottie(path: str):
 
 # Attempt to load Lottie progress animation
 LOTTIE_PROGRESS = None
-LOTTIE_FILENAME = "progress_bar.json" # Use a single variable for filename
+LOTTIE_FILENAME = "progress_bar.json" 
 if st_lottie is not None:
-    # Attempt 1: Look in the directory where the script is run
     LOTTIE_PROGRESS = load_lottie(LOTTIE_FILENAME) 
-    # Attempt 2: Load from 'assets' folder (handled inside load_lottie if not found in root)
     if LOTTIE_PROGRESS is None:
         LOTTIE_PROGRESS = load_lottie(os.path.join("assets", LOTTIE_FILENAME))
 
@@ -371,7 +388,6 @@ if st_lottie is not None:
 st.set_page_config(page_title="WaterBuddy", layout="wide")
 
 # session defaults
-# ... (session state initialization remains the same)
 if "theme" not in st.session_state:
     st.session_state.theme = "Light"
 if "logged_in" not in st.session_state:
@@ -391,7 +407,7 @@ apply_theme(st.session_state.theme)
 st.title("WaterBuddy — Hydration Tracker")
 
 # -----------------------
-# Login and Signup UIs (Rerun/Login flow fixed)
+# Login and Signup UIs (Using st.form for clean flow)
 # -----------------------
 def login_ui():
     st.header("Login (username + password)")
@@ -400,10 +416,8 @@ def login_ui():
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
     with col2:
-        # FIX: The login flow was slightly clunky. Use st.form to group inputs and prevent
-        # immediate reruns on typing, and use st.success/st.error only inside the block.
         with st.form("login_form"):
-            st.form_submit_button("Login", type="primary") # Primary button for login
+            st.form_submit_button("Login", type="primary")
             if st.session_state.login_form:
                 if not username or not password:
                     st.warning("Enter both username and password.")
@@ -417,7 +431,6 @@ def login_ui():
                         new_theme = profile.get("theme", "Light")
                         if new_theme != st.session_state.theme:
                             st.session_state.theme = new_theme
-                            # Don't apply theme here, let the main loop rerun to apply it
                             
                         st.session_state.page = "dashboard"
                         st.success("Login successful. Reloading...")
@@ -460,11 +473,9 @@ def signup_ui():
         st.rerun()
 
 # -----------------------
-# Dashboard UI (remains robust)
+# Dashboard UI
 # -----------------------
 def dashboard_ui():
-    # ... (content remains the same, as the previous fixes were excellent)
-
     uid = st.session_state.uid
     if not uid:
         st.error("Missing user id. Please login again.")
@@ -477,17 +488,17 @@ def dashboard_ui():
     profile = get_user_profile(uid)
     intake = get_today_intake(uid)
     
-    # === Core Progress Variables Calculation (The original fix was here) ===
+    # Calculate core progress variables
     std_goal = AGE_GOALS_ML.get(profile.get("age_group","19-50"), 2500)
     user_goal = int(profile.get("user_goal_ml", std_goal))
     remaining = max(user_goal - intake, 0)
     percent = min((intake / user_goal) * 100 if user_goal > 0 else 0, 100)
-    # ===========================================================================
 
     left_col, right_col = st.columns([1,3])
 
     with left_col:
         st.subheader("Navigate")
+        
         # Theme selector 
         theme_options = ["Light","Aqua","Dark"]
         try:
@@ -499,16 +510,13 @@ def dashboard_ui():
         theme_choice = st.selectbox("Theme", theme_options, index=idx)
         if theme_choice != st.session_state.theme:
             st.session_state.theme = theme_choice
-            # Persist theme choice to profile
             update_user_profile(uid, {"theme": theme_choice})  
-            # Apply theme and immediately RERUN to reload the page with the new styling
             apply_theme(theme_choice)
             st.rerun() 
 
-        st.markdown("")  # spacer
+        st.markdown("")
 
         # left nav buttons
-        # ... (Navigation buttons remain the same)
         if st.button("Home", key="nav_home"):
             st.session_state.nav = "Home"
             st.rerun()
@@ -533,9 +541,9 @@ def dashboard_ui():
         st.info(st.session_state.tip)
         if st.button("New tip", key="new_tip"):
             st.session_state.tip = random.choice(TIPS)
-            st.rerun() # Rerun to display the new tip immediately
+            st.rerun()
 
-    # ensure theme for right pane (redundant but safe)
+    # ensure theme for right pane
     apply_theme(st.session_state.theme)
 
     with right_col:
@@ -567,10 +575,9 @@ def dashboard_ui():
                     end_frame = int(total_frames * (percent / 100.0))
                     if end_frame < 1:
                         end_frame = 1
-                    # st_lottie is called without the surrounding div, as it is a component
                     st_lottie(LOTTIE_PROGRESS, loop=False, start_frame=0, end_frame=end_frame, height=120)
                 except Exception:
-                    pass # Fail silently
+                    pass
 
             # milestone messages
             if percent >= 100:
@@ -588,7 +595,6 @@ def dashboard_ui():
 
             c1, c2, c3 = st.columns([1,1,1])
             with c1:
-                # FIX: Added st.form for logging to improve user experience
                 with st.form("quick_log_form"):
                     st.form_submit_button(f"+{DEFAULT_QUICK_LOG_ML} ml", type="primary")
                     if st.session_state.quick_log_form:
@@ -617,7 +623,6 @@ def dashboard_ui():
                                 st.error("Failed to update. Check network/DB rules.")
             
             with c3:
-                # FIX: Added st.form for reset
                 with st.form("reset_form"):
                     st.form_submit_button("Reset today", type="secondary")
                     if st.session_state.reset_form:
@@ -629,7 +634,6 @@ def dashboard_ui():
                             st.error("Failed to reset. Check network/DB rules.")
 
             st.markdown("---")
-            # ... (Unit converter logic remains the same)
             st.subheader("Unit converter")
             cc1, cc2 = st.columns(2)
             with cc1:
@@ -643,40 +647,46 @@ def dashboard_ui():
                     cups_conv = round(ml_in / CUPS_TO_ML, 2)
                     st.success(f"{ml_in} ml = {cups_conv} cups")
             
+        # HISTORY PAGE
         elif nav == "History":
             st.header("Water Intake History")
-            st.markdown("---")
-            st.subheader("Last 7 Days Intake Graph")
             
-            # Fetch data 
+            # 1. Fetch data 
             past_intake_data = get_past_intake(uid, days_count=7)
             
-            # Generate and display the plot
+            st.markdown("---")
+            st.subheader("Last 7 Days Bar Chart (Daily Comparison)")
+            
+            # NEW CHART: Weekly Bar Chart
             try:
-                # user_goal is already calculated and available here
-                intake_plot_fig = plot_water_intake(past_intake_data, user_goal) 
-                # FIX: Passing the figure object to st.pyplot() is the correct, thread-safe way
-                st.pyplot(intake_plot_fig) 
+                intake_bar_fig = plot_weekly_bar_chart(past_intake_data, user_goal)
+                st.pyplot(intake_bar_fig) # 
             except Exception as e:
-                # Removed specific Matplotlib import error message as it's less likely than
-                # data processing errors after installation.
-                st.error(f"Could not generate graph. Error: {e}")
-                st.info("Ensure all intake data is valid and numerical.")
+                st.error(f"Could not generate bar chart. Error: {e}")
+                
+            st.markdown("---")
+            st.subheader("Last 7 Days Trend (Line Chart)")
+            
+            # EXISTING CHART: Line Chart
+            try:
+                intake_plot_fig = plot_daily_intake_trend(past_intake_data, user_goal)  
+                st.pyplot(intake_plot_fig)  # 
+            except Exception as e:
+                st.error(f"Could not generate trend graph. Error: {e}")
+                st.info("Ensure you have Matplotlib installed and some data logged.")
 
 
         elif nav == "Settings":
             st.header("Settings & Profile")
-            # safe index for selectbox
             age_keys = list(AGE_GOALS_ML.keys())
             try:
                 idx = age_keys.index(profile.get("age_group", "19-50"))
             except Exception:
-                idx = 2  # default to "19-50"
+                idx = 2
             age_choice = st.selectbox("Select age group", age_keys, index=idx)
             suggested = AGE_GOALS_ML[age_choice]
             st.write(f"Suggested: {suggested} ml")
             
-            # Ensure the input field value uses the current goal from the profile
             current_goal = int(profile.get("user_goal_ml", suggested))
             user_goal_val = st.number_input("Daily goal (ml)", min_value=500, max_value=10000, value=current_goal, step=50)
             
