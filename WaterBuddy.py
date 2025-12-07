@@ -475,9 +475,10 @@ def view_settings(uid, profile):
 # --------------------------------------------------
 def view_runner_game():
     st.header("WaterBuddy Runner Game 🤖💧")
-    st.write("Press **SPACE** to jump and collect water droplets (blue circles).")
+    st.write("Press **SPACE** to start/jump. Collect droplets (coins). Press **R** to restart in-game.")
     st.markdown("---")
     
+    # Image Loading
     try:
         try:
             with open("assets/ROBO.png", "rb") as f:
@@ -499,40 +500,58 @@ def view_runner_game():
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
 
+      const groundY = 350;
+
+      // Persistent lifetime coins across runs (per page session)
+      window.__waterbuddyTotalCoins = window.__waterbuddyTotalCoins || 0;
+
+      // Game state
+      let gameState = "menu"; // "menu", "playing", "gameover"
+      let gameOver = false;
+
+      // Player and gameplay vars
       let playerImg = new Image();
       playerImg.src = "{robo_url}";
 
-      const groundY = 350;
       let player = {{ x: 150, y: groundY, width: 120, height: 140, velocityY: 0, gravity: 0.4, jumpPower: -12, onGround: true }};
-      
       let obstacles = [];
       let droplets = [];
       let speed = 6;
-      let score = 0;
+      let score = 0;            // run score (distance + coins)
+      let coinsCollected = 0;   // run coins
       let frame = 0;
-      let gameOver = false;
 
+      // Input
       document.addEventListener("keydown", function(e) {{
         if (e.code === "Space") {{
-          e.preventDefault(); 
-          if (!gameOver && player.onGround) {{
+          e.preventDefault();
+          if (gameState === "menu") {{
+            startGame();
+          }} else if (gameState === "playing" && player.onGround && !gameOver) {{
             player.velocityY = player.jumpPower;
             player.onGround = false;
+          }} else if (gameState === "gameover") {{
+            gameState = "menu";
+            drawMenu();
           }}
         }}
-        if (e.code === "KeyR" && gameOver) {{
+        if (e.code === "KeyR" && gameState === "playing") {{
           restart();
         }}
       }});
 
+      // Spawns
       function spawnObstacle() {{
+        // Bottom aligns with player feet (430 + 60 = 490; ground feet 350 + 140 = 490)
         obstacles.push({{ type: "block", x: canvas.width + 50, y: 430, width: 60, height: 60 }});
       }}
 
       function spawnDroplet() {{
-        droplets.push({{ x: canvas.width + 50, y: Math.random() * 200 + 150, width: 30, height: 40 }});
+        const y = Math.random() * 200 + 150;
+        droplets.push({{ x: canvas.width + 50, y, width: 30, height: 40 }});
       }}
 
+      // Draw
       function drawPlayer() {{
         ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
       }}
@@ -549,6 +568,35 @@ def view_runner_game():
         ctx.fill();
       }}
 
+      // HUD
+      function drawHUD() {{
+        ctx.fillStyle = "#000";
+        ctx.font = "28px Arial";
+        ctx.fillText("Score: " + score, 30, 40);
+        ctx.fillText("Coins: " + coinsCollected, 30, 80);
+      }}
+
+      // Menu
+      function drawMenu() {{
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Background
+        ctx.fillStyle = "#222";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "48px Arial";
+        ctx.fillText("WaterBuddy Runner", canvas.width/2 - 250, canvas.height/2 - 120);
+
+        ctx.font = "24px Arial";
+        ctx.fillText("Press SPACE to Start", canvas.width/2 - 120, canvas.height/2 - 40);
+        ctx.fillText("Jump with SPACE. Press R to restart.", canvas.width/2 - 170, canvas.height/2);
+
+        // Lifetime coins
+        ctx.font = "28px Arial";
+        ctx.fillText("Total Coins: " + window.__waterbuddyTotalCoins, canvas.width/2 - 120, canvas.height/2 + 60);
+      }}
+
+      // Utils
       function aabb(ax, ay, aw, ah, bx, by, bw, bh) {{
         return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
       }}
@@ -563,117 +611,153 @@ def view_runner_game():
         }};
       }}
 
+      // Game Loop
       function gameLoop() {{
-        if (gameOver) return;
+        if (gameState !== "playing") return;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        player.velocityY += player.gravity; 
+        // Physics
+        player.velocityY += player.gravity;
         player.y += player.velocityY;
-        player.onGround = false; 
+        player.onGround = false;
 
-        if (player.y >= groundY) {{ 
-          player.y = groundY; 
-          player.velocityY = 0; 
-          player.onGround = true; 
+        // Ground clamp
+        if (player.y >= groundY) {{
+          player.y = groundY;
+          player.velocityY = 0;
+          player.onGround = true;
         }}
 
-        drawPlayer();
-
+        // Spawns
         if (frame % 70 === 0) spawnObstacle();
-        if (frame % 50 === 0) spawnDroplet();
+        if (frame % 55 === 0) spawnDroplet();
 
+        // Obstacles
         for (let i = obstacles.length - 1; i >= 0; i--) {{
-          let obs = obstacles[i];
+          const obs = obstacles[i];
           obs.x -= speed;
           drawObstacle(obs);
-          
+
           const pcb = playerCollisionBox();
           const overlapping = aabb(pcb.x, pcb.y, pcb.w, pcb.h, obs.x, obs.y, obs.width, obs.height);
 
           if (overlapping) {{
             const falling = player.velocityY >= 0;
             const playerFeetY = player.y + player.height;
-            const obsTopY = obs.y;
             const playerHeadY = player.y;
+            const obsTopY = obs.y;
 
-            // Landing on top
+            // Safe landing on top
             if (falling && playerFeetY <= obsTopY + 10) {{
-              player.y = obsTopY - player.height; 
+              player.y = obsTopY - player.height;
               player.velocityY = 0;
               player.onGround = true;
-              if (player.y > groundY) player.y = groundY;
               continue;
             }}
 
-            // Head bump: cancel upward motion, no death
-            if (playerHeadY <= obsTopY && !falling) {{
+            // Head bump (ignore death, cancel upward motion)
+            if (!falling && playerHeadY <= obsTopY + 5) {{
               player.y = obsTopY + 1;
               player.velocityY = 0;
               continue;
             }}
 
-            // Side collision = death
+            // Side/bottom collision -> game over
             endGame();
             break;
           }}
-          
-          if (obs.x < -100) obstacles.splice(i, 1);
+
+          if (obs.x < -120) obstacles.splice(i, 1);
         }}
 
+        // Droplets (coins)
         for (let i = droplets.length - 1; i >= 0; i--) {{
-          let drop = droplets[i];
+          const drop = droplets[i];
           drop.x -= speed;
           drawDroplet(drop);
 
           const pcb = playerCollisionBox();
-          if (aabb(pcb.x, pcb.y, pcb.w, pcb.h, drop.x, drop.y, drop.width, drop.height)) {{
-            score += 10;
+          // Slightly shrunken droplet hitbox for fair collection
+          const m = 5;
+          if (aabb(pcb.x, pcb.y, pcb.w, pcb.h, drop.x + m, drop.y + m, drop.width - 2*m, drop.height - 2*m)) {{
+            coinsCollected += 1;                 // run coins
+            window.__waterbuddyTotalCoins += 1;  // lifetime coins
+            score += 100;                        // coin bonus
             droplets.splice(i, 1);
-          }} else if (drop.x < -50) {{
+          }} else if (drop.x < -60) {{
             droplets.splice(i, 1);
           }}
         }}
 
-        ctx.fillStyle = "#000";
-        ctx.font = "28px Arial";
-        ctx.fillText("Score: " + score, 30, 40);
+        // Base score like Subway Surfers (distance-based)
+        score += Math.floor(speed);
 
+        // Draw player and HUD
+        drawPlayer();
+        drawHUD();
+
+        // Difficulty scaling
         speed += 0.002;
         frame++;
 
         requestAnimationFrame(gameLoop);
       }}
 
-      function endGame() {{
-        gameOver = true;
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#fff";
-        ctx.font = "32px Arial";
-        ctx.fillText("Game Over! Final Score: " + score, canvas.width/2 - 200, canvas.height/2 - 20);
-        ctx.font = "20px Arial";
-        ctx.fillText("Press R to restart", canvas.width/2 - 90, canvas.height/2 + 20);
-      }}
-
-      function restart() {{
+      // State transitions
+      function startGame() {{
+        gameState = "playing";
+        gameOver = false;
         obstacles = [];
         droplets = [];
         speed = 6;
         score = 0;
+        coinsCollected = 0;
         frame = 0;
         player.x = 150;
         player.y = groundY;
         player.velocityY = 0;
         player.onGround = true;
-        gameOver = false;
         requestAnimationFrame(gameLoop);
       }}
 
-      playerImg.onload = function() {{
+      function endGame() {{
+        gameOver = true;
+        gameState = "gameover";
+
+        // Overlay
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "32px Arial";
+        ctx.fillText("Game Over! Final Score: " + score, canvas.width/2 - 200, canvas.height/2 - 20);
+        ctx.font = "22px Arial";
+        ctx.fillText("Run Coins: " + coinsCollected, canvas.width/2 - 90, canvas.height/2 + 20);
+        ctx.font = "20px Arial";
+        ctx.fillText("Press SPACE to return to Menu", canvas.width/2 - 150, canvas.height/2 + 60);
+      }}
+
+      function restart() {{
+        // Restart during playing state
+        gameOver = false;
+        obstacles = [];
+        droplets = [];
+        speed = 6;
+        score = 0;
+        coinsCollected = 0;
+        frame = 0;
+        player.x = 150;
+        player.y = groundY;
+        player.velocityY = 0;
+        player.onGround = true;
         requestAnimationFrame(gameLoop);
+      }}
+
+      // Start: show menu, then focus
+      playerImg.onload = function() {{
+        drawMenu();
         setTimeout(() => {{
-          document.getElementById('gameCanvas').focus();
+          canvas.focus();
         }}, 0);
       }};
     }})();
@@ -699,6 +783,7 @@ def view_runner_game():
     
     components.html(html_content, height=600)
 
+    
 # --------------------------------------------------
 # Dashboard / Main App View
 # --------------------------------------------------
