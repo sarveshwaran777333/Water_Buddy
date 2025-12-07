@@ -475,26 +475,27 @@ def view_settings(uid, profile):
 # --------------------------------------------------
 def view_runner_game():
     st.header("WaterBuddy Runner Game 🤖💧")
-    st.write("Press **SPACE** to jump and collect water droplets (blue circles). Requires a file named `ROBO.png` in an `assets` folder or the script directory.")
+    st.write("Press **SPACE** to jump and collect water droplets (blue circles).")
     st.markdown("---")
     
-    # ... (Image loading code is correct and omitted for brevity) ...
+    # --- Image Loading (Base64 is essential for Streamlit components) ---
     try:
         # Tries assets folder first, then local directory
         try:
             with open("assets/ROBO.png", "rb") as f:
                 robo_data = f.read()
         except FileNotFoundError:
+            # Fallback if no assets folder exists
             with open("ROBO.png", "rb") as f:
                 robo_data = f.read()
                 
         robo_base64 = base64.b64encode(robo_data).decode()
         robo_url = f"data:image/png;base64,{robo_base64}"
     except FileNotFoundError:
-        st.error("Error: **ROBO.png** file not found. Game cannot load.")
+        st.error("Error: **ROBO.png** file not found. Game cannot load. Please ensure the file exists.")
         return
 
-    # FULL JS GAME CODE (Simplified for inclusion)
+    # --- FULL JAVASCRIPT GAME CODE ---
     js_game_code = f"""
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
@@ -502,22 +503,28 @@ def view_runner_game():
     let playerImg = new Image();
     playerImg.src = "{robo_url}";
 
-    let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 1, jumpPower: -18, onGround: true }};
+    // Physics adjusted for a better, wider jump arc:
+    // gravity: 0.7 (was 1), jumpPower: -15 (was -18)
+    let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 0.7, jumpPower: -15, onGround: true }};
+    
     let obstacles = [];
     let droplets = [];
     let speed = 6;
     let score = 0;
     let frame = 0;
 
+    // --- INPUT HANDLER (Spacebar Fix) ---
+    // Event listener attached to the whole document inside the component iframe
     document.addEventListener("keydown", function(e) {{
-        // The jump logic is correct: checks for Spacebar and player being on the ground
-        if (e.code === "Space" && player.onGround) {{
-            player.velocityY = player.jumpPower;
-            player.onGround = false;
+        // e.preventDefault() is often required to stop the spacebar from scrolling the page
+        if (e.code === "Space") {{
+            e.preventDefault(); 
+            if (player.onGround) {{
+                player.velocityY = player.jumpPower;
+                player.onGround = false;
+            }}
         }}
     }});
-    
-    // ... (All other functions: spawnObstacle, spawnDroplet, drawPlayer, etc. remain here) ...
 
     function spawnObstacle() {{
         // Simple Block obstacle
@@ -525,7 +532,7 @@ def view_runner_game():
     }}
 
     function spawnDroplet() {{
-        // Water Droplet collectible
+        // Water Droplet collectible (spawned at random height)
         droplets.push({{ x: canvas.width + 50, y: Math.random() * 200 + 150, width: 30, height: 40 }});
     }}
 
@@ -554,7 +561,7 @@ def view_runner_game():
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Player physics
-        player.velocityY += player.gravity;
+        player.velocityY += player.gravity; 
         player.y += player.velocityY;
         if (player.y >= 350) {{ player.y = 350; player.velocityY = 0; player.onGround = true; }}
 
@@ -571,45 +578,47 @@ def view_runner_game():
             drawObstacle(obs);
             if (collision(player, obs)) {{
                 alert("Game Over! Final Score: " + score);
-                // Instead of location.reload(), you might want a custom reset function
                 document.location.reload(); 
             }}
             if (obs.x < -100) obstacles.splice(i, 1);
         }}
 
-        // Droplet processing
+        // Droplet processing (Collectibles)
         for (let i = droplets.length - 1; i >= 0; i--) {{
             let drop = droplets[i];
             drop.x -= speed;
             drawDroplet(drop);
             if (collision(player, drop)) {{
                 score += 10;
-                droplets.splice(i, 1);
+                droplets.splice(i, 1); // Remove droplet on collection
             }}
             if (drop.x < -50) droplets.splice(i, 1);
         }}
 
+        // Score display
         ctx.fillStyle = "#000";
         ctx.font = "28px Arial";
         ctx.fillText("Score: " + score, 30, 40);
 
+        // Difficulty scaling
         speed += 0.002;
         frame++;
 
         requestAnimationFrame(gameLoop);
     }}
 
-    // Ensure image is loaded before starting the loop
+    // Start game when the robot image is loaded
     playerImg.onload = gameLoop;
     
-    // <<< ADDED FOCUS FIX HERE >>>
-    // Explicitly set focus to the canvas element when the component finishes loading
+    // --- FOCUS FIX ---
+    // Force focus to the canvas to ensure keydown events are captured (Crucial fix)
     document.getElementById('gameCanvas').focus();
-    </script>
     """
 
+    # --- HTML and Components ---
     html_content = f"""
     <style>
+    /* Styling the canvas */
     canvas {{
         background: linear-gradient(#ffefd5, #ffd5c8);
         display: block;
@@ -617,14 +626,19 @@ def view_runner_game():
         border-radius: 10px;
         border: 2px solid #333;
     }}
+    /* Optional: Visual cue when focused */
+    #gameCanvas:focus {{
+        outline: 3px solid #5dade2; 
+    }}
     </style>
 
     <canvas id="gameCanvas" width="900" height="500" tabindex="0"></canvas>
 
     <script>{js_game_code}</script>
     """
+    
+    # Render the component
     components.html(html_content, height=600)
-
 # --------------------------------------------------
 # Dashboard / Main App View
 # --------------------------------------------------
