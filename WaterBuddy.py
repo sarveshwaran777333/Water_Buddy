@@ -40,7 +40,17 @@ HYDRATION_TIPS = [
     "Start your day with a glass of water.",
     "Add lemon or cucumber for natural flavor.",
     "Set small hourly reminders and sip regularly.",
+    "Drink a small cup of water before each meal.",
+    "Take a few sips every 20–30 minutes while studying.",
+    "Carry a lightweight bottle when you go outside.",
+    "Refill your bottle when it becomes half empty.",
+    "Drink extra water on hot or humid days.",
+    "Keep a bottle near your bed for morning and night sips.",
+    "Choose water instead of soft drinks when thirsty.",
+    "Eat fruits with high water content like watermelon or oranges.",
+    "Drink water slowly instead of all at once.",
 ]
+
 
 # --------------------------------------------------
 # Firebase Helpers (REST API)
