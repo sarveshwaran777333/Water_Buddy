@@ -6,6 +6,7 @@ import base64
 import random
 import matplotlib.pyplot as plt
 from datetime import date, timedelta
+import time # Added for sleep
 
 # --------------------------------------------------
 # Optional Lottie Support
@@ -31,6 +32,7 @@ AGE_GROUP_DEFAULTS = {
 }
 
 DEFAULT_QUICK_ADD = 250
+CUPS_TO_ML = 236.588 # Added for unit conversion context
 
 HYDRATION_TIPS = [
     "Keep a filled water bottle visible on your desk.",
@@ -94,7 +96,7 @@ def create_user(username: str, password: str):
 
     payload = {
         "username": username,
-        "password": password,
+        "password": password, # NOTE: In a real app, hash this password!
         "created_at": TODAY,
         "profile": {
             "age_group": "19-50",
@@ -132,19 +134,25 @@ def get_profile(uid: str):
     profile = fb_get(f"{USERS_NODE}/{uid}/profile") or {}
     age_group = profile.get("age_group", "19-50")
     goal = profile.get("user_goal_ml", AGE_GROUP_DEFAULTS[age_group])
-    return {"age_group": age_group, "user_goal_ml": int(goal)}
+    return {"age_group": age_group, "user_goal_ml": int(goal), "theme": profile.get("theme", "Light")}
 
 def update_profile(uid: str, updates: dict):
     return fb_patch(f"{USERS_NODE}/{uid}/profile", updates)
 
 def get_history(uid: str, days=7):
-    """Get last N days of intake."""
+    """Get last N days of intake, sorted by date (oldest first)."""
     out = {}
     today = date.today()
+    temp_history = {}
     for i in range(days):
         d = (today - timedelta(days=i)).isoformat()
         raw = fb_get(f"{USERS_NODE}/{uid}/days/{d}/intake")
-        out[d] = int(raw or 0)
+        temp_history[d] = int(raw or 0)
+    
+    # Sort to get chronological order for plotting
+    for d in sorted(temp_history.keys()):
+        out[d] = temp_history[d]
+        
     return out
 
 # --------------------------------------------------
@@ -170,10 +178,16 @@ for key, value in DEFAULT_STATE.items():
 def apply_theme(theme: str):
     if theme == "Light":
         bg, fg = "#ffffff", "#000000"
+        metric_bg = "#f7f7f7"
+        metric_fg = "#000000"
     elif theme == "Aqua":
         bg, fg = "#e8fbff", "#004455"
+        metric_bg = "#d9f7ff"
+        metric_fg = "#005577"
     else:  # Dark Theme
         bg, fg = "#0f1720", "#e6eef6"
+        metric_bg = "#1a2634"
+        metric_fg = "#e6eef6"
 
     st.markdown(
         f"""
@@ -182,6 +196,14 @@ def apply_theme(theme: str):
             background-color: {bg} !important;
             color: {fg} !important;
         }}
+        h1, h2, h3, h4, p, span, label {{ color: {fg} !important; }}
+        
+        div[data-testid="metric-container"] {{
+            background-color: {metric_bg} !important;
+            border-radius: 12px;
+            padding: 12px;
+        }}
+        div[data-testid="metric-container"] * {{ color: {metric_fg} !important; }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -208,13 +230,65 @@ def render_bottle(percent: float):
     """
 
 # --------------------------------------------------
+# Banner
+# --------------------------------------------------
+def congratulations_banner():
+    """Renders an animating congratulatory banner at the bottom of the screen."""
+    
+    # CSS for the sliding banner animation
+    banner_css = """
+    <style>
+    @keyframes slideInUp {
+      0% {
+        transform: translateY(100%);
+        opacity: 0;
+      }
+      100% {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .congrats-banner {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background-color: #2ecc71; /* Success color */
+      color: white;
+      text-align: center;
+      padding: 15px;
+      z-index: 1000; /* Ensure it's on top */
+      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
+      animation: slideInUp 0.8s ease-out forwards;
+      font-size: 24px;
+      font-weight: bold;
+      border-top-left-radius: 10px;
+      border-top-right-radius: 10px;
+    }
+    </style>
+    """
+    st.markdown(banner_css, unsafe_allow_html=True)
+
+    # HTML for the banner content
+    banner_html = """
+    <div class="congrats-banner">
+        🎉 CONGRATULATIONS! You hit your daily water goal! 🎉
+    </div>
+    """
+    
+    with st.container():
+        st.markdown(banner_html, unsafe_allow_html=True)
+
+
+# --------------------------------------------------
 # Graphing
 # --------------------------------------------------
 def render_history_graph(history, goal):
+    # Sort keys for chronological order
     days = sorted(history.keys())
-    days.reverse()
     values = [history[d] for d in days]
-    labels = [f"{d[5:7]}-{d[8:10]}" for d in days]
+    labels = [date.fromisoformat(d).strftime("%a %m/%d") for d in days]
 
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot(labels, values, marker="o", color="#3498db")
@@ -222,7 +296,9 @@ def render_history_graph(history, goal):
     ax.set_ylim(bottom=0)
     ax.set_title("Water Intake (Last 7 Days)")
     ax.set_ylabel("ml")
-    ax.grid(True, alpha=0.4)
+    ax.tick_params(axis='x', rotation=45)
+    ax.grid(True, axis='y', alpha=0.4)
+    fig.tight_layout()
     return fig
 
 # --------------------------------------------------
@@ -231,21 +307,31 @@ def render_history_graph(history, goal):
 def view_login():
     st.header("Login")
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    username = st.text_input("Username", key="login_username_input")
+    password = st.text_input("Password", type="password", key="login_password_input")
 
-    if st.button("Sign In"):
+    if st.button("Sign In", key="login_btn"):
+        if not username or not password:
+            st.error("Please enter both username and password.")
+            return
+
         ok, uid = login_user(username.strip(), password)
         if ok:
             st.session_state.logged_in = True
             st.session_state.uid = uid
+            
+            # Load user-specific theme
+            profile = get_profile(uid)
+            st.session_state.theme = profile.get("theme", "Light")
+            
             st.session_state.view = "dashboard"
-            st.success("Welcome back!")
+            st.success("Welcome back! Rerunning...")
+            time.sleep(0.1) # Give time for message to display
             st.rerun()
         else:
             st.error("Invalid username or password.")
 
-    if st.button("Create new account"):
+    if st.button("Create new account", key="go_signup"):
         st.session_state.view = "signup"
         st.rerun()
 
@@ -254,11 +340,16 @@ def view_login():
 # --------------------------------------------------
 def view_signup():
     st.header("Create Account")
+    st.warning("Note: Passwords are not hashed in this demo, please use a secure password manager for real applications.")
 
-    username = st.text_input("Choose username")
-    password = st.text_input("Choose password", type="password")
+    username = st.text_input("Choose username", key="signup_username_input")
+    password = st.text_input("Choose password", type="password", key="signup_password_input")
 
-    if st.button("Register"):
+    if st.button("Register", key="signup_btn"):
+        if not username or not password:
+            st.error("Please enter both username and password.")
+            return
+
         uid = create_user(username.strip(), password)
         if uid:
             st.success("Account created. You may now log in.")
@@ -267,7 +358,7 @@ def view_signup():
         else:
             st.error("Username already exists or network error.")
 
-    if st.button("Back to login"):
+    if st.button("Back to login", key="go_login"):
         st.session_state.view = "login"
         st.rerun()
 
@@ -278,21 +369,52 @@ def view_log(uid, intake, goal):
     st.header("Log Water Intake")
     st.write(f"**Today's intake:** {intake} ml")
     st.write(f"**Goal:** {goal} ml")
+    
+    col1, col2 = st.columns(2)
 
-    if st.button(f"+ {DEFAULT_QUICK_ADD} ml"):
-        update_intake(uid, intake + DEFAULT_QUICK_ADD)
-        st.rerun()
+    with col1:
+        # Quick Add Button
+        if st.button(f"+ {DEFAULT_QUICK_ADD} ml", use_container_width=True):
+            if update_intake(uid, intake + DEFAULT_QUICK_ADD):
+                st.success(f"Added {DEFAULT_QUICK_ADD} ml.")
+                st.rerun()
+            else:
+                st.error("Failed to update.")
 
-    custom = st.number_input("Custom amount (ml)", min_value=0)
-    if st.button("Add Custom"):
-        update_intake(uid, intake + custom)
-        st.success("Water added!")
-        st.rerun()
+    with col2:
+        # Reset Button
+        if st.button("Reset Today", use_container_width=True):
+            if reset_intake(uid):
+                st.info("Intake reset!")
+                st.rerun()
+            else:
+                st.error("Failed to reset.")
+    
+    st.markdown("---")
 
-    if st.button("Reset Today"):
-        reset_intake(uid)
-        st.success("Reset!")
-        st.rerun()
+    # Custom Add Form
+    with st.form("custom_log_form"):
+        custom = st.number_input("Custom amount (ml)", min_value=0, step=50)
+        submitted = st.form_submit_button("Add Custom Amount")
+        
+        if submitted and custom > 0:
+            if update_intake(uid, intake + custom):
+                st.success(f"Added {custom} ml.")
+                st.rerun()
+            else:
+                st.error("Failed to update.")
+
+    st.markdown("---")
+    st.subheader("Unit Converter")
+    cc1, cc2 = st.columns(2)
+    
+    with cc1:
+        cups = st.number_input("Cups to Milliliters", min_value=0.0, step=0.5)
+        st.write(f"Equals: **{round(cups * CUPS_TO_ML, 1)} ml**")
+    
+    with cc2:
+        ml_in = st.number_input("Milliliters to Cups", min_value=0.0, step=50.0)
+        st.write(f"Equals: **{round(ml_in / CUPS_TO_ML, 2)} cups**")
 
 # --------------------------------------------------
 # UI: History
@@ -300,50 +422,213 @@ def view_log(uid, intake, goal):
 def view_history(uid, goal):
     st.header("History")
     history = get_history(uid, 7)
-    fig = render_history_graph(history, goal)
-    st.pyplot(fig)
+    
+    st.subheader("Intake Trend")
+    try:
+        fig = render_history_graph(history, goal)
+        st.pyplot(fig)
+    except Exception as e:
+        st.error("Could not render chart.")
+        print(f"Graphing Error: {e}")
 
     st.subheader("Raw History Data")
-    st.table({day: f"{amount} ml" for day, amount in history.items()})
+    # Convert history dict for table display (most recent first)
+    table_data = {
+        "Date": [date.fromisoformat(d).strftime("%b %d, %Y") for d in reversed(sorted(history.keys()))],
+        "Intake": [f"{history[d]} ml" for d in reversed(sorted(history.keys()))]
+    }
+    st.table(table_data)
 
 # --------------------------------------------------
 # UI: Settings
 # --------------------------------------------------
 def view_settings(uid, profile):
     st.header("Settings")
+    
+    current_theme = profile.get("theme", "Light")
 
     age_group_list = list(AGE_GROUP_DEFAULTS.keys())
     selected_age = st.selectbox("Age Group", age_group_list, index=age_group_list.index(profile["age_group"]))
+    st.write(f"Suggested goal for this group: **{AGE_GROUP_DEFAULTS[selected_age]} ml**")
 
-    custom_goal = st.number_input("Daily Goal (ml)", min_value=0, value=profile["user_goal_ml"])
+    custom_goal = st.number_input("Daily Goal (ml)", min_value=500, max_value=10000, value=profile["user_goal_ml"], step=100)
+    
+    theme_options = ["Light", "Aqua", "Dark"]
+    selected_theme = st.selectbox("App Theme", theme_options, index=theme_options.index(current_theme))
+
 
     if st.button("Save Settings"):
-        update_profile(uid, {"age_group": selected_age, "user_goal_ml": int(custom_goal)})
-        st.success("Settings saved!")
-        st.rerun()
+        updates = {
+            "age_group": selected_age, 
+            "user_goal_ml": int(custom_goal),
+            "theme": selected_theme
+        }
+        if update_profile(uid, updates):
+            st.success("Settings saved! Reloading for theme change...")
+            st.session_state.theme = selected_theme
+            st.rerun()
+        else:
+            st.error("Failed to save settings.")
 
 # --------------------------------------------------
 # UI: 2D Runner Game
 # --------------------------------------------------
 def view_runner_game():
-    st.header("WaterBuddy Runner Game")
+    st.header("WaterBuddy Runner Game 🤖💧")
+    st.write("Press **SPACE** to jump and collect water droplets (blue circles). Requires a file named `ROBO.png` in an `assets` folder or the script directory.")
+    st.markdown("---")
+    
+    try:
+        # Tries assets folder first, then local directory
+        try:
+            with open("assets/ROBO.png", "rb") as f:
+                robo_data = f.read()
+        except FileNotFoundError:
+            with open("ROBO.png", "rb") as f:
+                robo_data = f.read()
+                
+        robo_base64 = base64.b64encode(robo_data).decode()
+        robo_url = f"data:image/png;base64,{robo_base64}"
+    except FileNotFoundError:
+        st.error("Error: **ROBO.png** file not found. Game cannot load.")
+        return
 
-    with open("assets/ROBO.png", "rb") as f:
-        img = base64.b64encode(f.read()).decode()
+    # FULL JS GAME CODE (Simplified for inclusion)
+    js_game_code = f"""
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
-    html = f"""
-    <canvas id="gameCanvas" width="900" height="500"></canvas>
-    <script>
-        // Entire JS game code unchanged...
+    let playerImg = new Image();
+    playerImg.src = "{robo_url}";
+
+    let player = {{ x: 150, y: 350, width: 120, height: 140, velocityY: 0, gravity: 1, jumpPower: -18, onGround: true }};
+    let obstacles = [];
+    let droplets = [];
+    let speed = 6;
+    let score = 0;
+    let frame = 0;
+
+    document.addEventListener("keydown", function(e) {{
+        if (e.code === "Space" && player.onGround) {{
+            player.velocityY = player.jumpPower;
+            player.onGround = false;
+        }}
+    }});
+
+    function spawnObstacle() {{
+        // Simple Block obstacle
+        obstacles.push({{ type: "block", x: canvas.width + 50, y: 380, width: 60, height: 60 }});
+    }}
+
+    function spawnDroplet() {{
+        // Water Droplet collectible
+        droplets.push({{ x: canvas.width + 50, y: Math.random() * 200 + 150, width: 30, height: 40 }});
+    }}
+
+    function drawPlayer() {{
+        ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+    }}
+
+    function drawObstacle(obs) {{
+        ctx.fillStyle = "#666";
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+    }}
+
+    function drawDroplet(drop) {{
+        ctx.fillStyle = "#00aaff";
+        ctx.beginPath();
+        ctx.ellipse(drop.x + 15, drop.y + 20, 15, 20, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }}
+
+    function collision(a, b) {{
+        return a.x < b.x + b.width && a.x + a.width > b.x &&
+               a.y < b.y + b.height && a.y + a.height > b.y;
+    }}
+
+    function gameLoop() {{
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Player physics
+        player.velocityY += player.gravity;
+        player.y += player.velocityY;
+        if (player.y >= 350) {{ player.y = 350; player.velocityY = 0; player.onGround = true; }}
+
+        drawPlayer();
+
+        // Spawning logic (simple fixed rate)
+        if (frame % 70 === 0) spawnObstacle();
+        if (frame % 50 === 0) spawnDroplet();
+
+        // Obstacle processing
+        for (let i = obstacles.length - 1; i >= 0; i--) {{
+            let obs = obstacles[i];
+            obs.x -= speed;
+            drawObstacle(obs);
+            if (collision(player, obs)) {{
+                alert("Game Over! Final Score: " + score);
+                document.location.reload(); 
+            }}
+            if (obs.x < -100) obstacles.splice(i, 1);
+        }}
+
+        // Droplet processing
+        for (let i = droplets.length - 1; i >= 0; i--) {{
+            let drop = droplets[i];
+            drop.x -= speed;
+            drawDroplet(drop);
+            if (collision(player, drop)) {{
+                score += 10;
+                droplets.splice(i, 1);
+            }}
+            if (drop.x < -50) droplets.splice(i, 1);
+        }}
+
+        ctx.fillStyle = "#000";
+        ctx.font = "28px Arial";
+        ctx.fillText("Score: " + score, 30, 40);
+
+        speed += 0.002;
+        frame++;
+
+        requestAnimationFrame(gameLoop);
+    }}
+
+    // Ensure image is loaded before starting the loop
+    playerImg.onload = gameLoop;
     </script>
     """
-    components.html(html, height=600)
+
+    html_content = f"""
+    <style>
+    canvas {{
+        background: linear-gradient(#ffefd5, #ffd5c8);
+        display: block;
+        margin: 0 auto;
+        border-radius: 10px;
+        border: 2px solid #333;
+    }}
+    </style>
+
+    <canvas id="gameCanvas" width="900" height="500"></canvas>
+
+    <script>{js_game_code}</script>
+    """
+    components.html(html_content, height=600)
+
 
 # --------------------------------------------------
 # Dashboard / Main App View
 # --------------------------------------------------
 def view_dashboard():
     uid = st.session_state.uid
+    if not uid:
+        st.error("Authentication error. Please log in again.")
+        st.session_state.logged_in = False
+        st.session_state.view = "login"
+        st.rerun()
+        return
+
     profile = get_profile(uid)
     intake = get_intake(uid)
     goal = profile["user_goal_ml"]
@@ -351,11 +636,11 @@ def view_dashboard():
 
     left, right = st.columns([1, 2])
 
-    # Navigation Panel
+    ## Navigation Panel
     with left:
         st.subheader("Navigation")
         for option in ["Home", "Log Water", "History", "Settings", "Runner Game", "Logout"]:
-            if st.button(option):
+            if st.button(option, key=f"nav_{option}"):
                 if option == "Logout":
                     st.session_state.logged_in = False
                     st.session_state.uid = None
@@ -364,36 +649,57 @@ def view_dashboard():
                     st.session_state.nav = option
                 st.rerun()
 
-        # Theme selector
-        theme = st.selectbox("Theme", ["Light", "Aqua", "Dark"])
+        st.markdown("---")
+        
+        # Theme selector (uses session state but the main logic is in settings)
+        theme_options = ["Light", "Aqua", "Dark"]
+        try:
+             idx = theme_options.index(st.session_state.theme)
+        except ValueError:
+            idx = 0
+            
+        theme = st.selectbox("Theme Quick View", theme_options, index=idx)
         if theme != st.session_state.theme:
             st.session_state.theme = theme
             apply_theme(theme)
+            # NOTE: Theme is properly persisted in view_settings upon saving.
 
+        st.markdown("---")
         st.subheader("Tip of the Day")
         st.info(st.session_state.tip)
-        if st.button("New Tip"):
+        if st.button("New Tip", key="new_tip"):
             st.session_state.tip = random.choice(HYDRATION_TIPS)
+            st.rerun()
 
-    # Main Panel
+    ## Main Panel
     with right:
         nav = st.session_state.nav
 
         if nav == "Home":
             st.header("Today's Summary")
-            st.metric("Total intake", f"{intake} ml", f"{goal - intake} ml remaining")
+            st.write(f"Goal: **{goal} ml** | Date: **{TODAY}**")
+            
+            st.metric("Total Intake", f"{intake} ml", f"{goal - intake} ml remaining" if goal > intake else "Goal Achieved!")
             st.progress(percent / 100)
 
-            st.components.v1.html(render_bottle(percent), height=350)
+            col_viz, col_status = st.columns([1, 1])
+            with col_viz:
+                st.components.v1.html(render_bottle(percent), height=350, width=200)
 
-            if percent >= 100:
-                st.success("Goal achieved!")
-            elif percent >= 75:
-                st.info("Great progress — you're over 75%!")
-            elif percent >= 50:
-                st.info("Halfway there!")
-            else:
-                st.info("Nice start!")
+            with col_status:
+                if st_lottie is not None:
+                    # NOTE: Lottie must be loaded here if used
+                    pass
+                    
+                if percent >= 100:
+                    st.success("🏆 Goal achieved! You are fully hydrated for the day.")
+                    congratulations_banner() # Call the banner
+                elif percent >= 75:
+                    st.info("Almost there! Only a little bit more to go.")
+                elif percent >= 50:
+                    st.info("Halfway there! Keep sipping.")
+                else:
+                    st.info("Nice start! Make sure to space out your remaining intake.")
 
         elif nav == "Log Water":
             view_log(uid, intake, goal)
