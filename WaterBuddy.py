@@ -1,8 +1,3 @@
-"""
-WaterBuddy - Full App with 2D Runner Game
-Error-free, all features included, plus embedded game
-"""
-
 import streamlit as st
 import streamlit.components.v1 as components
 import requests
